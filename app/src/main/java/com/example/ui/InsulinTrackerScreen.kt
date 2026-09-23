@@ -111,6 +111,8 @@ import com.example.data.BGUtils
 import com.example.data.InsulinRecord
 import com.example.data.MealPeriod
 import com.example.ui.TableDateRange
+import com.example.ui.ItemType
+import com.example.ui.components.AddItemDialog
 import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.LandscapeTableView
 import com.example.ui.components.RecordCard
@@ -576,7 +578,7 @@ fun InsulinTrackerScreen(
                     label = "view_mode_transition"
                 ) { targetMode ->
                     if (filteredRecords.isEmpty()) {
-                        EmptyRecordsView(onAdd = { viewModel.openAddDialog() })
+                        EmptyRecordsView(onAdd = { viewModel.openAddItemDialog() })
                     } else if (targetMode == ViewMode.CARDS) {
                         DailyCardPager(
                             records = filteredRecords,
@@ -588,7 +590,9 @@ fun InsulinTrackerScreen(
                             },
                             onEdit = { viewModel.openEditDialog(it) },
                             onDelete = { viewModel.promptDelete(it) },
-                            onEditPeriod = { record, period -> viewModel.openEditDialog(record, period) }
+                            onEditPeriod = { record, period -> viewModel.openEditDialog(record, period) },
+                            onAddItem = { record, period, itemType -> viewModel.openAddItemDialog(record.date, period, itemType) },
+                            onDeletePostMeal = { record, period, idx -> viewModel.deletePostMealEntry(record.date, period, idx) }
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -672,6 +676,30 @@ fun InsulinTrackerScreen(
     // Active Dialogs
     when (val state = dialogState) {
         is DialogState.None -> Unit
+        is DialogState.AddItem -> {
+            AddItemDialog(
+                initialDate = state.initialDate,
+                initialPeriod = state.initialPeriod,
+                initialItemType = state.initialItemType,
+                allRecords = allRecords,
+                onDismiss = { viewModel.dismissDialog() },
+                onSaveItem = { date, period, itemType, bgVal, dietText, medName, dose, medTiming, postMealTag, postMealTime, keepOpen ->
+                    viewModel.saveSingleItem(
+                        date = date,
+                        period = period,
+                        itemType = itemType,
+                        bgValue = bgVal,
+                        dietText = dietText,
+                        medName = medName,
+                        dose = dose,
+                        medTiming = medTiming,
+                        postMealTag = postMealTag,
+                        postMealTime = postMealTime,
+                        keepDialogOpen = keepOpen
+                    )
+                }
+            )
+        }
         is DialogState.Edit -> {
             RecordEditDialog(
                 initialRecord = state.initialRecord,
@@ -920,6 +948,8 @@ private fun DailyCardPager(
     onEdit: (InsulinRecord) -> Unit,
     onDelete: (InsulinRecord) -> Unit,
     onEditPeriod: ((InsulinRecord, MealPeriod) -> Unit)? = null,
+    onAddItem: ((InsulinRecord, MealPeriod, ItemType?) -> Unit)? = null,
+    onDeletePostMeal: ((InsulinRecord, MealPeriod, Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -1249,6 +1279,8 @@ private fun DailyCardPager(
                 onEdit = { onEdit(record) },
                 onDelete = { onDelete(record) },
                 onEditPeriod = { period -> onEditPeriod?.invoke(record, period) ?: onEdit(record) },
+                onAddItem = { period, itemType -> onAddItem?.invoke(record, period, itemType) },
+                onDeletePostMeal = { period, idx -> onDeletePostMeal?.invoke(record, period, idx) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .graphicsLayer {

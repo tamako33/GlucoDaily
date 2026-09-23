@@ -49,12 +49,24 @@ enum class AppThemeMode(val title: String) {
     DARK("夜间模式")
 }
 
+enum class ItemType(val title: String, val icon: String) {
+    PRE_MEAL_BG("餐前血糖", "🩸"),
+    DIET("用餐情况", "🍽️"),
+    MEDICATION("用药", "💊"),
+    POST_MEAL_BG("餐后血糖", "🩸")
+}
+
 sealed class DialogState {
     object None : DialogState()
     data class Edit(
         val initialRecord: InsulinRecord? = null,
         val initialDate: String? = null,
         val initialPeriod: MealPeriod? = null
+    ) : DialogState()
+    data class AddItem(
+        val initialDate: String? = null,
+        val initialPeriod: MealPeriod? = null,
+        val initialItemType: ItemType? = null
     ) : DialogState()
     data class ConfirmDelete(val record: InsulinRecord) : DialogState()
 }
@@ -158,23 +170,146 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         setThemeMode(next)
     }
 
-    fun openAddDialog(date: String? = null, period: MealPeriod? = null) {
+    fun openAddItemDialog(date: String? = null, period: MealPeriod? = null, itemType: ItemType? = null) {
         val targetDate = date ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-        val existingRecord = allRecords.value.find { it.date == targetDate }
-        val targetPeriod = period ?: existingRecord?.getNextRecommendedPeriod() ?: run {
-            val hour = java.time.LocalTime.now().hour
-            when {
-                hour < 11 -> MealPeriod.MORNING
-                hour < 15 -> MealPeriod.LUNCH
-                hour < 20 -> MealPeriod.DINNER
-                else -> MealPeriod.NIGHT
+        val targetPeriod = period ?: InsulinRecord.getPeriodForTime()
+        _dialogState.value = DialogState.AddItem(
+            initialDate = targetDate,
+            initialPeriod = targetPeriod,
+            initialItemType = itemType
+        )
+    }
+
+    fun openAddDialog(date: String? = null, period: MealPeriod? = null) {
+        openAddItemDialog(date, period)
+    }
+
+    fun saveSingleItem(
+        date: String,
+        period: MealPeriod,
+        itemType: ItemType,
+        bgValue: Float? = null,
+        dietText: String = "",
+        medName: String = "",
+        dose: Float? = null,
+        medTiming: String = "",
+        postMealTag: String = "",
+        postMealTime: String = "",
+        keepDialogOpen: Boolean = false
+    ) {
+        viewModelScope.launch {
+            val existing = allRecords.value.find { it.date == date } ?: InsulinRecord(date = date)
+            val updated = when (itemType) {
+                ItemType.PRE_MEAL_BG -> {
+                    if (bgValue != null) {
+                        when (period) {
+                            MealPeriod.MORNING -> existing.copy(fastingBG = bgValue, preBfBG = bgValue)
+                            MealPeriod.LUNCH -> existing.copy(preLunchBG = bgValue)
+                            MealPeriod.DINNER -> existing.copy(preDinnerBG = bgValue)
+                            MealPeriod.NIGHT -> existing.copy(preNightBG = bgValue)
+                        }
+                    } else {
+                        existing
+                    }
+                }
+                ItemType.DIET -> {
+                    if (dietText.isNotBlank()) {
+                        when (period) {
+                            MealPeriod.MORNING -> existing.copy(bfDiet = dietText.trim())
+                            MealPeriod.LUNCH -> existing.copy(lunchDiet = dietText.trim())
+                            MealPeriod.DINNER -> existing.copy(dinnerDiet = dietText.trim())
+                            MealPeriod.NIGHT -> existing.copy(nightDiet = dietText.trim())
+                        }
+                    } else {
+                        existing
+                    }
+                }
+                ItemType.MEDICATION -> {
+                    if (dose != null) {
+                        val actualName = medName.trim().ifBlank { "胰岛素" }
+                        val actualTiming = medTiming.trim().ifBlank { if (period == MealPeriod.NIGHT) "睡前" else "餐前" }
+                        when (period) {
+                            MealPeriod.MORNING -> existing.copy(
+                                bfMedName = actualName,
+                                bfInsulin = dose,
+                                bfMedTiming = actualTiming
+                            )
+                            MealPeriod.LUNCH -> existing.copy(
+                                lunchMedName = actualName,
+                                lunchInsulin = dose,
+                                lunchMedTiming = actualTiming
+                            )
+                            MealPeriod.DINNER -> existing.copy(
+                                dinnerMedName = actualName,
+                                dinnerInsulin = dose,
+                                dinnerMedTiming = actualTiming
+                            )
+                            MealPeriod.NIGHT -> existing.copy(
+                                nightMedName = actualName,
+                                bedtimeInsulin = dose,
+                                nightMedTiming = actualTiming
+                            )
+                        }
+                    } else {
+                        existing
+                    }
+                }
+                ItemType.POST_MEAL_BG -> {
+                    if (bgValue != null) {
+                        val currentList = existing.getPostMealList(period).toMutableList()
+                        currentList.add(com.example.data.PostMealEntry(bgValue, postMealTime, postMealTag))
+                        val newPrimary = currentList.firstOrNull()?.value
+                        val serializedExtras = com.example.data.PostMealUtils.serializeEntries(currentList)
+                        when (period) {
+                            MealPeriod.MORNING -> existing.copy(postBfBG = newPrimary, postBfBGExtra = serializedExtras)
+                            MealPeriod.LUNCH -> existing.copy(postLunchBG = newPrimary, postLunchBGExtra = serializedExtras)
+                            MealPeriod.DINNER -> existing.copy(postDinnerBG = newPrimary, postDinnerBGExtra = serializedExtras)
+                            MealPeriod.NIGHT -> existing.copy(postNightBG = newPrimary, postNightBGExtra = serializedExtras)
+                        }
+                    } else {
+                        existing
+                    }
+                }
+            }
+            if (updated == existing) {
+                if (!keepDialogOpen) {
+                    dismissDialog()
+                }
+                return@launch
+            }
+            repository.insertRecord(updated)
+            val typeDesc = when (itemType) {
+                ItemType.PRE_MEAL_BG -> if (period == MealPeriod.MORNING) "空腹血糖" else if (period == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖"
+                ItemType.DIET -> "用餐情况"
+                ItemType.MEDICATION -> "用药记录"
+                ItemType.POST_MEAL_BG -> "餐后血糖"
+            }
+            _toastEvent.emit("已添加「${period.title} · $typeDesc」")
+            _scrollToDateEvent.emit(date)
+            if (!keepDialogOpen) {
+                dismissDialog()
             }
         }
-        _dialogState.value = DialogState.Edit(
-            initialRecord = existingRecord,
-            initialDate = targetDate,
-            initialPeriod = targetPeriod
-        )
+    }
+
+    fun deletePostMealEntry(date: String, period: MealPeriod, index: Int) {
+        viewModelScope.launch {
+            val record = allRecords.value.find { it.date == date } ?: return@launch
+            val list = record.getPostMealList(period).toMutableList()
+            if (index in list.indices) {
+                list.removeAt(index)
+                val newPrimary = list.firstOrNull()?.value
+                val serializedExtras = if (list.isEmpty()) "" else com.example.data.PostMealUtils.serializeEntries(list)
+                val updated = when (period) {
+                    MealPeriod.MORNING -> record.copy(postBfBG = newPrimary, postBfBGExtra = serializedExtras)
+                    MealPeriod.LUNCH -> record.copy(postLunchBG = newPrimary, postLunchBGExtra = serializedExtras)
+                    MealPeriod.DINNER -> record.copy(postDinnerBG = newPrimary, postDinnerBGExtra = serializedExtras)
+                    MealPeriod.NIGHT -> record.copy(postNightBG = newPrimary, postNightBGExtra = serializedExtras)
+                }
+                repository.insertRecord(updated)
+                _toastEvent.emit("已删除该条餐后血糖记录")
+            }
+        }
     }
 
     fun openEditDialog(record: InsulinRecord, period: MealPeriod? = null) {

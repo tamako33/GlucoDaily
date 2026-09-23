@@ -15,6 +15,7 @@ data class InsulinRecord(
     val fastingBG: Float? = null,
     val preBfBG: Float? = null,
     val postBfBG: Float? = null,
+    val postBfBGExtra: String = "",
     val bfMedName: String = "胰岛素",
     val bfInsulin: Float? = null,
     val bfMedTiming: String = "餐前",
@@ -23,6 +24,7 @@ data class InsulinRecord(
     // 午间：餐前、餐后；药名、用药量、用药时机；餐食
     val preLunchBG: Float? = null,
     val postLunchBG: Float? = null,
+    val postLunchBGExtra: String = "",
     val lunchMedName: String = "胰岛素",
     val lunchInsulin: Float? = null,
     val lunchMedTiming: String = "餐前",
@@ -31,6 +33,7 @@ data class InsulinRecord(
     // 傍晚：餐前、餐后；药名、用药量、用药时机；餐食
     val preDinnerBG: Float? = null,
     val postDinnerBG: Float? = null,
+    val postDinnerBGExtra: String = "",
     val dinnerMedName: String = "胰岛素",
     val dinnerInsulin: Float? = null,
     val dinnerMedTiming: String = "餐前",
@@ -39,6 +42,7 @@ data class InsulinRecord(
     // 夜晚：餐前、餐后；药名、用药量、用药时机；餐食
     val preNightBG: Float? = null,
     val postNightBG: Float? = null,
+    val postNightBGExtra: String = "",
     val nightMedName: String = "胰岛素",
     val bedtimeInsulin: Float? = null,
     val nightMedTiming: String = "餐前",
@@ -47,16 +51,42 @@ data class InsulinRecord(
     val notes: String = ""
 ) {
     val hasMorningData: Boolean
-        get() = fastingBG != null || preBfBG != null || postBfBG != null || bfInsulin != null || bfDiet.isNotBlank()
+        get() = fastingBG != null || preBfBG != null || postBfBG != null || postBfBGExtra.isNotBlank() || bfInsulin != null || bfDiet.isNotBlank()
 
     val hasLunchData: Boolean
-        get() = preLunchBG != null || postLunchBG != null || lunchInsulin != null || lunchDiet.isNotBlank()
+        get() = preLunchBG != null || postLunchBG != null || postLunchBGExtra.isNotBlank() || lunchInsulin != null || lunchDiet.isNotBlank()
 
     val hasDinnerData: Boolean
-        get() = preDinnerBG != null || postDinnerBG != null || dinnerInsulin != null || dinnerDiet.isNotBlank()
+        get() = preDinnerBG != null || postDinnerBG != null || postDinnerBGExtra.isNotBlank() || dinnerInsulin != null || dinnerDiet.isNotBlank()
 
     val hasNightData: Boolean
-        get() = preNightBG != null || postNightBG != null || bedtimeInsulin != null || nightDiet.isNotBlank()
+        get() = preNightBG != null || postNightBG != null || postNightBGExtra.isNotBlank() || bedtimeInsulin != null || nightDiet.isNotBlank()
+
+    /**
+     * 获取指定餐段的所有餐后血糖记录（包含首个及后续多次增加的记录）
+     */
+    fun getPostMealList(period: MealPeriod): List<PostMealEntry> {
+        val (primary, extra) = when (period) {
+            MealPeriod.MORNING -> postBfBG to postBfBGExtra
+            MealPeriod.LUNCH -> postLunchBG to postLunchBGExtra
+            MealPeriod.DINNER -> postDinnerBG to postDinnerBGExtra
+            MealPeriod.NIGHT -> postNightBG to postNightBGExtra
+        }
+        if (extra.isNotBlank()) {
+            val parsed = PostMealUtils.parseEntries(extra).toMutableList()
+            if (parsed.isNotEmpty()) {
+                // 若外部单独编辑修改了 primary 字段，保持首条记录与 primary 保持同步
+                if (primary != null && parsed[0].value != primary) {
+                    parsed[0] = parsed[0].copy(value = primary)
+                } else if (primary == null) {
+                    // 若外部清空了 primary，则视为全部清空
+                    return emptyList()
+                }
+                return parsed
+            }
+        }
+        return if (primary != null) listOf(PostMealEntry(primary, "", "餐后")) else emptyList()
+    }
 
     /**
      * Determines the next recommended period to record.
@@ -67,23 +97,25 @@ data class InsulinRecord(
             hasMorningData && !hasLunchData -> MealPeriod.LUNCH
             hasLunchData && !hasDinnerData -> MealPeriod.DINNER
             hasDinnerData && !hasNightData -> MealPeriod.NIGHT
-            !hasMorningData -> {
-                val hour = java.time.LocalTime.now().hour
-                when {
-                    hour < 11 -> MealPeriod.MORNING
-                    hour < 15 -> MealPeriod.LUNCH
-                    hour < 20 -> MealPeriod.DINNER
-                    else -> MealPeriod.NIGHT
-                }
-            }
-            else -> {
-                val hour = java.time.LocalTime.now().hour
-                when {
-                    hour < 11 -> MealPeriod.MORNING
-                    hour < 15 -> MealPeriod.LUNCH
-                    hour < 20 -> MealPeriod.DINNER
-                    else -> MealPeriod.NIGHT
-                }
+            else -> getPeriodForTime()
+        }
+    }
+
+    companion object {
+        /**
+         * 调用系统时间自动识别当前属于哪一个时段（早，中，晚，睡前）
+         * - 早晨 (05:00 - 10:59): 晨间
+         * - 中午 (11:00 - 15:59): 午间
+         * - 傍晚 (16:00 - 20:59): 傍晚
+         * - 睡前 (21:00 - 04:59): 睡前
+         */
+        fun getPeriodForTime(time: java.time.LocalTime = java.time.LocalTime.now()): MealPeriod {
+            val hour = time.hour
+            return when {
+                hour in 5..10 -> MealPeriod.MORNING
+                hour in 11..15 -> MealPeriod.LUNCH
+                hour in 16..20 -> MealPeriod.DINNER
+                else -> MealPeriod.NIGHT
             }
         }
     }
@@ -100,7 +132,10 @@ data class InsulinRecord(
 
     val postMealAverageBG: Float?
         get() {
-            val list = listOfNotNull(postBfBG, postLunchBG, postDinnerBG, postNightBG)
+            val list = mutableListOf<Float>()
+            MealPeriod.entries.forEach { p ->
+                getPostMealList(p).forEach { list.add(it.value) }
+            }
             return if (list.isNotEmpty()) list.average().toFloat() else null
         }
 
@@ -215,3 +250,80 @@ data class PrevNightInfo(
     val isExactYesterday: Boolean,
     val medName: String = ""
 )
+
+/**
+ * 餐后血糖条目（支持在同一餐段记录多条）
+ */
+data class PostMealEntry(
+    val value: Float,
+    val time: String = "", // 测量时间点，如 "13:30"
+    val tag: String = ""   // 标签，如 "餐后1小时"、"餐后2小时"、"加测"
+)
+
+object PostMealUtils {
+    fun parseEntries(extraStr: String): List<PostMealEntry> {
+        if (extraStr.isBlank()) return emptyList()
+        val list = mutableListOf<PostMealEntry>()
+        // 1. Try standard org.json (Android runtime)
+        try {
+            val arr = org.json.JSONArray(extraStr)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val v = obj.optDouble("v", 0.0).toFloat()
+                val t = obj.optString("t", "")
+                val g = obj.optString("g", "")
+                if (v > 0f) {
+                    list.add(PostMealEntry(v, t, g))
+                }
+            }
+            if (list.isNotEmpty()) return list
+        } catch (_: Throwable) {
+            // JVM unit test stub or non-json format
+        }
+
+        // 2. Regex fallback for JVM unit test or lightweight JSON
+        val regex = Regex("""\{"v":([0-9.]+)(?:,"t":"([^"]*)")?(?:,"g":"([^"]*)")?\}""")
+        val matches = regex.findAll(extraStr).toList()
+        if (matches.isNotEmpty()) {
+            for (m in matches) {
+                val v = m.groupValues[1].toFloatOrNull() ?: continue
+                val t = m.groupValues.getOrNull(2) ?: ""
+                val g = m.groupValues.getOrNull(3) ?: ""
+                if (v > 0f) {
+                    list.add(PostMealEntry(v, t, g))
+                }
+            }
+            return list
+        }
+
+        // 3. Fallback for legacy comma-separated values (e.g. "7.5,8.2")
+        extraStr.split(",").forEach {
+            it.trim().toFloatOrNull()?.let { v ->
+                if (v > 0f) list.add(PostMealEntry(v, "", ""))
+            }
+        }
+        return list
+    }
+
+    fun serializeEntries(entries: List<PostMealEntry>): String {
+        if (entries.isEmpty()) return ""
+        return entries.joinToString(prefix = "[", postfix = "]", separator = ",") { e ->
+            buildString {
+                append("{\"v\":")
+                append(e.value)
+                if (e.time.isNotBlank()) {
+                    append(",\"t\":\"")
+                    append(e.time.replace("\"", "\\\""))
+                    append("\"")
+                }
+                if (e.tag.isNotBlank()) {
+                    append(",\"g\":\"")
+                    append(e.tag.replace("\"", "\\\""))
+                    append("\"")
+                }
+                append("}")
+            }
+        }
+    }
+}
+

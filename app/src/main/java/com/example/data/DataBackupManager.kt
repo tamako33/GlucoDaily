@@ -91,26 +91,35 @@ object DataBackupManager {
         csvBuilder.append('\uFEFF')
         csvBuilder.append("日期,早餐空腹血糖,早前血糖,早用药名称,早用药剂量,早后血糖,早餐食谱,午餐前血糖,午用药名称,午用药剂量,午后血糖,午餐食谱,晚餐前血糖,晚用药名称,晚用药剂量,晚后血糖,晚餐食谱,睡前血糖,夜间血糖,睡前用药名称,睡前用药剂量,睡前饮食,备注\r\n")
         for (r in sortedRecords) {
+            val bfPostList = r.getPostMealList(MealPeriod.MORNING)
+            val bfPostStr = if (bfPostList.isEmpty()) "" else bfPostList.joinToString(";") { "${it.value}${if (it.tag.isNotBlank()) "(${it.tag})" else ""}" }
+            val lunchPostList = r.getPostMealList(MealPeriod.LUNCH)
+            val lunchPostStr = if (lunchPostList.isEmpty()) "" else lunchPostList.joinToString(";") { "${it.value}${if (it.tag.isNotBlank()) "(${it.tag})" else ""}" }
+            val dinnerPostList = r.getPostMealList(MealPeriod.DINNER)
+            val dinnerPostStr = if (dinnerPostList.isEmpty()) "" else dinnerPostList.joinToString(";") { "${it.value}${if (it.tag.isNotBlank()) "(${it.tag})" else ""}" }
+            val nightPostList = r.getPostMealList(MealPeriod.NIGHT)
+            val nightPostStr = if (nightPostList.isEmpty()) (r.postNightBG?.toString() ?: "") else nightPostList.joinToString(";") { "${it.value}${if (it.tag.isNotBlank()) "(${it.tag})" else ""}" }
+
             val cols = listOf(
                 r.date,
                 r.fastingBG?.toString() ?: "",
                 r.preBfBG?.toString() ?: "",
                 escapeCsv(r.bfMedName),
                 r.bfInsulin?.toString() ?: "",
-                r.postBfBG?.toString() ?: "",
+                escapeCsv(bfPostStr),
                 escapeCsv(r.bfDiet),
                 r.preLunchBG?.toString() ?: "",
                 escapeCsv(r.lunchMedName),
                 r.lunchInsulin?.toString() ?: "",
-                r.postLunchBG?.toString() ?: "",
+                escapeCsv(lunchPostStr),
                 escapeCsv(r.lunchDiet),
                 r.preDinnerBG?.toString() ?: "",
                 escapeCsv(r.dinnerMedName),
                 r.dinnerInsulin?.toString() ?: "",
-                r.postDinnerBG?.toString() ?: "",
+                escapeCsv(dinnerPostStr),
                 escapeCsv(r.dinnerDiet),
                 r.preNightBG?.toString() ?: "",
-                r.postNightBG?.toString() ?: "",
+                escapeCsv(nightPostStr),
                 escapeCsv(r.nightMedName),
                 r.bedtimeInsulin?.toString() ?: "",
                 escapeCsv(r.nightDiet),
@@ -284,26 +293,34 @@ object DataBackupManager {
         r.fastingBG?.let { json.put("fastingBG", it.toDouble()) }
         r.preBfBG?.let { json.put("preBfBG", it.toDouble()) }
         r.postBfBG?.let { json.put("postBfBG", it.toDouble()) }
+        if (r.postBfBGExtra.isNotBlank()) json.put("postBfBGExtra", r.postBfBGExtra)
         json.put("bfMedName", r.bfMedName)
         r.bfInsulin?.let { json.put("bfInsulin", it.toDouble()) }
+        json.put("bfMedTiming", r.bfMedTiming)
         json.put("bfDiet", r.bfDiet)
 
         r.preLunchBG?.let { json.put("preLunchBG", it.toDouble()) }
         r.postLunchBG?.let { json.put("postLunchBG", it.toDouble()) }
+        if (r.postLunchBGExtra.isNotBlank()) json.put("postLunchBGExtra", r.postLunchBGExtra)
         json.put("lunchMedName", r.lunchMedName)
         r.lunchInsulin?.let { json.put("lunchInsulin", it.toDouble()) }
+        json.put("lunchMedTiming", r.lunchMedTiming)
         json.put("lunchDiet", r.lunchDiet)
 
         r.preDinnerBG?.let { json.put("preDinnerBG", it.toDouble()) }
         r.postDinnerBG?.let { json.put("postDinnerBG", it.toDouble()) }
+        if (r.postDinnerBGExtra.isNotBlank()) json.put("postDinnerBGExtra", r.postDinnerBGExtra)
         json.put("dinnerMedName", r.dinnerMedName)
         r.dinnerInsulin?.let { json.put("dinnerInsulin", it.toDouble()) }
+        json.put("dinnerMedTiming", r.dinnerMedTiming)
         json.put("dinnerDiet", r.dinnerDiet)
 
         r.preNightBG?.let { json.put("preNightBG", it.toDouble()) }
         r.postNightBG?.let { json.put("postNightBG", it.toDouble()) }
+        if (r.postNightBGExtra.isNotBlank()) json.put("postNightBGExtra", r.postNightBGExtra)
         json.put("nightMedName", r.nightMedName)
         r.bedtimeInsulin?.let { json.put("bedtimeInsulin", it.toDouble()) }
+        json.put("nightMedTiming", r.nightMedTiming)
         json.put("nightDiet", r.nightDiet)
 
         json.put("notes", r.notes)
@@ -321,26 +338,34 @@ object DataBackupManager {
             fastingBG = optFloat("fastingBG"),
             preBfBG = optFloat("preBfBG"),
             postBfBG = optFloat("postBfBG"),
+            postBfBGExtra = json.optString("postBfBGExtra", ""),
             bfMedName = json.optString("bfMedName", "胰岛素"),
             bfInsulin = optFloat("bfInsulin"),
+            bfMedTiming = json.optString("bfMedTiming", "餐前"),
             bfDiet = json.optString("bfDiet", ""),
 
             preLunchBG = optFloat("preLunchBG"),
             postLunchBG = optFloat("postLunchBG"),
+            postLunchBGExtra = json.optString("postLunchBGExtra", ""),
             lunchMedName = json.optString("lunchMedName", "胰岛素"),
             lunchInsulin = optFloat("lunchInsulin"),
+            lunchMedTiming = json.optString("lunchMedTiming", "餐前"),
             lunchDiet = json.optString("lunchDiet", ""),
 
             preDinnerBG = optFloat("preDinnerBG"),
             postDinnerBG = optFloat("postDinnerBG"),
+            postDinnerBGExtra = json.optString("postDinnerBGExtra", ""),
             dinnerMedName = json.optString("dinnerMedName", "胰岛素"),
             dinnerInsulin = optFloat("dinnerInsulin"),
+            dinnerMedTiming = json.optString("dinnerMedTiming", "餐前"),
             dinnerDiet = json.optString("dinnerDiet", ""),
 
             preNightBG = optFloat("preNightBG"),
             postNightBG = optFloat("postNightBG"),
+            postNightBGExtra = json.optString("postNightBGExtra", ""),
             nightMedName = json.optString("nightMedName", "胰岛素"),
             bedtimeInsulin = optFloat("bedtimeInsulin"),
+            nightMedTiming = json.optString("nightMedTiming", "餐前"),
             nightDiet = json.optString("nightDiet", ""),
 
             notes = json.optString("notes", "")

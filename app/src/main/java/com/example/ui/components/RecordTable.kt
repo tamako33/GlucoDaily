@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.BGLevel
 import com.example.data.BGUtils
 import com.example.data.InsulinRecord
+import com.example.data.MealPeriod
 import com.example.data.MedicationData
 import com.example.data.PrevNightInfo
 import com.example.ui.theme.AppThemeColors
@@ -440,11 +441,13 @@ fun RecordTable(
                                             }
                                         } else null
                                     )
+                                    val bfPosts = record.getPostMealList(MealPeriod.MORNING)
                                     TableBGCellContainer(
                                         bg = record.postBfBG,
                                         width = postBfWidth,
                                         isFasting = false,
                                         fontSize = dataFontSize,
+                                        extraCount = (bfPosts.size - 1).coerceAtLeast(0),
                                         onLongClick = record.postBfBG?.let { bgVal ->
                                             {
                                                 val status = BGUtils.evaluatePostMeal(bgVal)
@@ -460,11 +463,14 @@ fun RecordTable(
                                                     BGLevel.HIGH -> cGlucoseHigh
                                                     null -> TealPrimary
                                                 }
+                                                val extraDetail = if (bfPosts.size > 1) {
+                                                    "\n" + bfPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
+                                                } else ""
                                                 zoomDetail = CellZoomDetail(
                                                     title = "🌅 早餐 · 餐后血糖",
                                                     date = record.date,
                                                     mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc,
+                                                    subText = levelDesc + extraDetail,
                                                     highlightColor = fgColor
                                                 )
                                             }
@@ -546,11 +552,13 @@ fun RecordTable(
                                             }
                                         } else null
                                     )
+                                    val lunchPosts = record.getPostMealList(MealPeriod.LUNCH)
                                     TableBGCellContainer(
                                         bg = record.postLunchBG,
                                         width = postLunchWidth,
                                         isFasting = false,
                                         fontSize = dataFontSize,
+                                        extraCount = (lunchPosts.size - 1).coerceAtLeast(0),
                                         onLongClick = record.postLunchBG?.let { bgVal ->
                                             {
                                                 val status = BGUtils.evaluatePostMeal(bgVal)
@@ -566,11 +574,14 @@ fun RecordTable(
                                                     BGLevel.HIGH -> cGlucoseHigh
                                                     null -> cLunchColor
                                                 }
+                                                val extraDetail = if (lunchPosts.size > 1) {
+                                                    "\n" + lunchPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
+                                                } else ""
                                                 zoomDetail = CellZoomDetail(
                                                     title = "☀️ 午餐 · 餐后血糖",
                                                     date = record.date,
                                                     mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc,
+                                                    subText = levelDesc + extraDetail,
                                                     highlightColor = fgColor
                                                 )
                                             }
@@ -652,11 +663,13 @@ fun RecordTable(
                                             }
                                         } else null
                                     )
+                                    val dinnerPosts = record.getPostMealList(MealPeriod.DINNER)
                                     TableBGCellContainer(
                                         bg = record.postDinnerBG,
                                         width = postDinnerWidth,
                                         isFasting = false,
                                         fontSize = dataFontSize,
+                                        extraCount = (dinnerPosts.size - 1).coerceAtLeast(0),
                                         onLongClick = record.postDinnerBG?.let { bgVal ->
                                             {
                                                 val status = BGUtils.evaluatePostMeal(bgVal)
@@ -672,11 +685,14 @@ fun RecordTable(
                                                     BGLevel.HIGH -> cGlucoseHigh
                                                     null -> cDinnerColor
                                                 }
+                                                val extraDetail = if (dinnerPosts.size > 1) {
+                                                    "\n" + dinnerPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
+                                                } else ""
                                                 zoomDetail = CellZoomDetail(
                                                     title = "🌙 晚餐 · 餐后血糖",
                                                     date = record.date,
                                                     mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc,
+                                                    subText = levelDesc + extraDetail,
                                                     highlightColor = fgColor
                                                 )
                                             }
@@ -1100,6 +1116,7 @@ private fun TableBGCellContainer(
     width: Dp,
     isFasting: Boolean,
     fontSize: androidx.compose.ui.unit.TextUnit,
+    extraCount: Int = 0,
     onLongClick: (() -> Unit)? = null
 ) {
     Box(
@@ -1111,7 +1128,20 @@ private fun TableBGCellContainer(
             ),
         contentAlignment = Alignment.Center
     ) {
-        TableBGCell(bg, isFasting, fontSize)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            TableBGCell(bg, isFasting, fontSize)
+            if (extraCount > 0) {
+                Text(
+                    text = "+$extraCount",
+                    fontSize = (fontSize.value - 4f).coerceAtLeast(8f).sp,
+                    color = TealPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
 }
 
