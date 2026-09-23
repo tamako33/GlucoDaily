@@ -592,7 +592,10 @@ fun InsulinTrackerScreen(
                             onDelete = { viewModel.promptDelete(it) },
                             onEditPeriod = { record, period -> viewModel.openEditDialog(record, period) },
                             onAddItem = { record, period, itemType -> viewModel.openAddItemDialog(record.date, period, itemType) },
-                            onDeletePostMeal = { record, period, idx -> viewModel.deletePostMealEntry(record.date, period, idx) }
+                            onDeletePostMeal = { record, period, idx -> viewModel.deletePostMealEntry(record.date, period, idx) },
+                            onDeleteSingleItem = { record, period, itemType, idx ->
+                                viewModel.deleteSingleItem(record.date, period, itemType, idx)
+                            }
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -951,6 +954,7 @@ private fun DailyCardPager(
     onEditPeriod: ((InsulinRecord, MealPeriod) -> Unit)? = null,
     onAddItem: ((InsulinRecord, MealPeriod, ItemType?) -> Unit)? = null,
     onDeletePostMeal: ((InsulinRecord, MealPeriod, Int) -> Unit)? = null,
+    onDeleteSingleItem: ((InsulinRecord, MealPeriod, ItemType, Int?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -1282,6 +1286,7 @@ private fun DailyCardPager(
                 onEditPeriod = { period -> onEditPeriod?.invoke(record, period) ?: onEdit(record) },
                 onAddItem = { period, itemType -> onAddItem?.invoke(record, period, itemType) },
                 onDeletePostMeal = { period, idx -> onDeletePostMeal?.invoke(record, period, idx) },
+                onDeleteSingleItem = { period, itemType, idx -> onDeleteSingleItem?.invoke(record, period, itemType, idx) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .graphicsLayer {

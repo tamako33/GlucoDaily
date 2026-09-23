@@ -1,7 +1,9 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,14 +24,21 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ModeComment
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.BGLevel
@@ -50,6 +60,18 @@ import com.example.ui.ItemType
 import com.example.ui.theme.AppThemeColors
 import com.example.ui.theme.TealPrimary
 import java.util.Locale
+
+/**
+ * 时间轴条目长按操作目标
+ */
+private data class TimelineActionTarget(
+    val period: MealPeriod,
+    val itemType: ItemType,
+    val icon: String,
+    val title: String,
+    val detail: String,
+    val postMealIndex: Int? = null
+)
 
 /**
  * 纵向时间轴记录卡片（极简无边框设计）：
@@ -68,8 +90,10 @@ fun RecordCard(
     onEditPeriod: ((MealPeriod) -> Unit)? = null,
     onAddItem: ((MealPeriod, ItemType?) -> Unit)? = null,
     onDeletePostMeal: ((MealPeriod, Int) -> Unit)? = null,
+    onDeleteSingleItem: ((MealPeriod, ItemType, Int?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    var actionTarget by remember { mutableStateOf<TimelineActionTarget?>(null) }
     val activePeriods = buildList {
         if (record.hasMorningData) add(MealPeriod.MORNING)
         if (record.hasLunchData) add(MealPeriod.LUNCH)
@@ -320,7 +344,7 @@ fun RecordCard(
                             prevNightInfo = if (period == MealPeriod.MORNING) prevNightInfo else null,
                             onEditPeriod = { onEditPeriod?.invoke(period) ?: onEdit() },
                             onAddItem = { itemType -> onAddItem?.invoke(period, itemType) },
-                            onDeletePostMeal = { idx -> onDeletePostMeal?.invoke(period, idx) }
+                            onActionItem = { actionTarget = it }
                         )
                     }
 
@@ -391,10 +415,97 @@ fun RecordCard(
             }
         }
     }
+
+    // 4. 长按条目操作弹窗（修改 / 删除）
+    if (actionTarget != null) {
+        val target = actionTarget!!
+        AlertDialog(
+            onDismissRequest = { actionTarget = null },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(target.icon, fontSize = 20.sp)
+                    Text("管理条目 · ${target.title}", fontSize = 16.5.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = target.detail,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // 1. 编辑修改此记录
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = TealPrimary.copy(alpha = 0.12f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val p = target.period
+                                actionTarget = null
+                                onEditPeriod?.invoke(p) ?: onEdit()
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(18.dp))
+                            Text("编辑修改此记录", fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = TealPrimary)
+                        }
+                    }
+
+                    // 2. 删除此条记录
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFEF4444).copy(alpha = 0.12f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val p = target.period
+                                val itType = target.itemType
+                                val idx = target.postMealIndex
+                                actionTarget = null
+                                if (onDeleteSingleItem != null) {
+                                    onDeleteSingleItem(p, itType, idx)
+                                } else if (itType == ItemType.POST_MEAL_BG && idx != null) {
+                                    onDeletePostMeal?.invoke(p, idx)
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                            Text("删除该条记录", fontSize = 14.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { actionTarget = null }) {
+                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
 }
 
 /**
- * 单个时段的纵向时间轴区块（竖排文字、时段色彩竖线、无大边框）
+ * 单个时段的纵向时间轴区块（竖排文字居中无底色切分竖线、时段色彩竖线、无大边框）
  */
 @Composable
 private fun TimelinePeriodSection(
@@ -414,14 +525,14 @@ private fun TimelinePeriodSection(
     prevNightInfo: PrevNightInfo? = null,
     onEditPeriod: () -> Unit,
     onAddItem: (ItemType?) -> Unit,
-    onDeletePostMeal: (Int) -> Unit
+    onActionItem: (TimelineActionTarget) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
     ) {
-        // 左侧时间轴轨道：节点圆圈 + 竖线段 + 竖排文字 + 贯穿竖线（全使用时段专属主题色！）
+        // 左侧时间轴轨道：节点圆圈 + 竖线上半段 + 竖排文字(居中无底色) + 竖线下半段（全使用时段专属主题色！）
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
@@ -442,44 +553,37 @@ private fun TimelinePeriodSection(
                 )
             }
 
-            // 竖线段 1（时段主题色）
-            Box(
-                modifier = Modifier
-                    .width(2.5.dp)
-                    .height(6.dp)
-                    .background(themeColor.copy(alpha = 0.55f))
-            )
-
-            // 竖排时段文字（晨\n间 等），时段专属主题色
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(themeColor.copy(alpha = if (AppThemeColors.isDark) 0.25f else 0.14f))
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(1.dp)
-                ) {
-                    period.title.forEach { ch ->
-                        Text(
-                            text = ch.toString(),
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = themeColor,
-                            lineHeight = 11.sp
-                        )
-                    }
-                }
-            }
-
-            // 竖线段 2：使用该时段主题色贯穿向下
+            // 竖线上半段（时段专属主题色，weight 1f 保证文字永远垂直居中）
             Box(
                 modifier = Modifier
                     .width(2.5.dp)
                     .weight(1f)
-                    .background(themeColor.copy(alpha = 0.45f))
+                    .background(themeColor.copy(alpha = 0.5f))
+            )
+
+            // 竖排时段文字（无底色，居中切分竖线）
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                period.title.forEach { ch ->
+                    Text(
+                        text = ch.toString(),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = themeColor,
+                        lineHeight = 12.sp
+                    )
+                }
+            }
+
+            // 竖线下半段（时段专属主题色，weight 1f 保证文字永远垂直居中）
+            Box(
+                modifier = Modifier
+                    .width(2.5.dp)
+                    .weight(1f)
+                    .background(themeColor.copy(alpha = 0.5f))
             )
         }
 
@@ -549,44 +653,90 @@ private fun TimelinePeriodSection(
                 }
             }
 
-            // 2. 独立条目：仅渲染有数据的项目（上方带微型时间，无灰底色）
+            // 2. 独立条目：仅渲染有数据的项目（上方带微型时间，无灰底色，长按可管理修改/删除）
             // 1) 餐前 / 空腹血糖
             if (preBG != null) {
                 TimelineItemPreBGRow(
                     label = preBGLabel,
                     value = preBG,
                     isFasting = isFasting,
-                    timeText = record.getItemTime(period, "preBG")
+                    timeText = record.getItemTime(period, "preBG"),
+                    onLongClick = {
+                        onActionItem(
+                            TimelineActionTarget(
+                                period = period,
+                                itemType = ItemType.PRE_MEAL_BG,
+                                icon = "🩸",
+                                title = preBGLabel,
+                                detail = "${String.format(Locale.US, "%.1f", preBG)} mmol/L"
+                            )
+                        )
+                    }
                 )
             }
 
             // 2) 用药记录
             if (medDose != null && medDose > 0) {
+                val displayMed = medName.ifBlank { "胰岛素" }
+                val unit = MedicationData.detectUnit(displayMed)
                 TimelineItemMedicationRow(
                     medName = medName,
                     dose = medDose,
                     timing = medTiming,
-                    timeText = record.getItemTime(period, "med")
+                    timeText = record.getItemTime(period, "med"),
+                    onLongClick = {
+                        onActionItem(
+                            TimelineActionTarget(
+                                period = period,
+                                itemType = ItemType.MEDICATION,
+                                icon = "💊",
+                                title = displayMed,
+                                detail = "${if (medDose % 1f == 0f) medDose.toInt().toString() else medDose.toString()} $unit ($medTiming)"
+                            )
+                        )
+                    }
                 )
             }
 
-            // 3) 用餐情况
+            // 3) 用餐情况（左侧统一显示“🍽️ 用餐”，内容居右对齐）
             if (dietText.isNotBlank()) {
                 TimelineItemDietRow(
                     dietText = dietText,
-                    timeText = record.getItemTime(period, "diet")
+                    timeText = record.getItemTime(period, "diet"),
+                    onLongClick = {
+                        onActionItem(
+                            TimelineActionTarget(
+                                period = period,
+                                itemType = ItemType.DIET,
+                                icon = "🍽️",
+                                title = "用餐",
+                                detail = dietText
+                            )
+                        )
+                    }
                 )
             }
 
-            // 4) 运动记录
+            // 4) 运动记录（左侧统一显示“🏃 运动”，运动时长与数字居右对齐）
             if (exerciseText.isNotBlank()) {
                 TimelineItemExerciseRow(
                     exerciseText = exerciseText,
-                    timeText = record.getItemTime(period, "exercise")
+                    timeText = record.getItemTime(period, "exercise"),
+                    onLongClick = {
+                        onActionItem(
+                            TimelineActionTarget(
+                                period = period,
+                                itemType = ItemType.EXERCISE,
+                                icon = "🏃",
+                                title = "运动",
+                                detail = exerciseText
+                            )
+                        )
+                    }
                 )
             }
 
-            // 5) 餐后血糖（支持多条，每条为独立条目，上方带时间）
+            // 5) 餐后血糖（支持多条，每条为独立条目，上方带时间，长按弹出管理）
             postMealList.forEachIndexed { idx, entry ->
                 TimelineItemPostBGRow(
                     entry = entry,
@@ -596,7 +746,18 @@ private fun TimelinePeriodSection(
                         MealPeriod.DINNER -> "20:15"
                         MealPeriod.NIGHT -> "23:00"
                     },
-                    onDelete = { onDeletePostMeal(idx) }
+                    onLongClick = {
+                        onActionItem(
+                            TimelineActionTarget(
+                                period = period,
+                                itemType = ItemType.POST_MEAL_BG,
+                                icon = "📈",
+                                title = entry.tag.ifBlank { "餐后血糖" },
+                                detail = "${String.format(Locale.US, "%.1f", entry.value)} mmol/L (${entry.time.ifBlank { "已录入" }})",
+                                postMealIndex = idx
+                            )
+                        )
+                    }
                 )
             }
         }
@@ -608,21 +769,28 @@ private fun TimelinePeriodSection(
  * - 老年友好大字号（数值 21sp Bold）
  * - 偏高/达标/偏低状态标签居左
  * - 数值与单位齐右
- * - 独立无底色，上方附一行小记录时间
+ * - 独立无底色，上方附一行小记录时间，长按弹出操作
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineItemPreBGRow(
     label: String,
     value: Float,
     isFasting: Boolean,
-    timeText: String
+    timeText: String,
+    onLongClick: () -> Unit
 ) {
     val status = if (isFasting) BGUtils.evaluateFasting(value) else BGUtils.evaluatePreMeal(value)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
         if (timeText.isNotBlank()) {
             Text(
@@ -711,14 +879,16 @@ private fun TimelineItemPreBGRow(
  * - 老年友好大字号（剂量 21sp Bold）
  * - 餐前/睡前时机标签在数字左边
  * - 剂量数值与单位齐右
- * - 独立无底色，上方附一行小记录时间
+ * - 独立无底色，上方附一行小记录时间，长按弹出操作
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineItemMedicationRow(
     medName: String,
     dose: Float,
     timing: String,
-    timeText: String
+    timeText: String,
+    onLongClick: () -> Unit
 ) {
     val displayMed = medName.ifBlank { "胰岛素" }
     val unit = MedicationData.detectUnit(displayMed)
@@ -726,7 +896,12 @@ private fun TimelineItemMedicationRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
         if (timeText.isNotBlank()) {
             Text(
@@ -808,17 +983,27 @@ private fun TimelineItemMedicationRow(
 }
 
 /**
- * 纵向时间轴条目：用餐情况（无底色，上方附一行小记录时间）
+ * 纵向时间轴条目：用餐情况
+ * - 左侧类目名称固定为“🍽️ 用餐”，样式与其它条目完全一致
+ * - 具体吃了什么食物内容向右侧对齐
+ * - 上方附一行小记录时间，长按弹出操作
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineItemDietRow(
     dietText: String,
-    timeText: String
+    timeText: String,
+    onLongClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
         if (timeText.isNotBlank()) {
             Text(
@@ -835,32 +1020,81 @@ private fun TimelineItemDietRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 2.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "🍽️", fontSize = 16.sp)
-            Spacer(modifier = Modifier.width(8.dp))
+            // 左侧：类目名字为用餐，样式和其他一致
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text(text = "🍽️", fontSize = 16.sp)
+                Text(
+                    text = "用餐",
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // 右侧：具体吃的食物内容，向右对齐
             Text(
                 text = dietText,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 18.sp
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
             )
         }
     }
 }
 
 /**
- * 纵向时间轴条目：运动记录（无底色，上方附一行小记录时间）
+ * 运动文本解析数据结构与解析工具
  */
+private data class ParsedExercise(val name: String, val duration: String?, val unit: String)
+
+private fun parseExercise(text: String): ParsedExercise {
+    val trimmed = text.trim()
+    val regex = Regex("""^(.*?)\s*(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)?$""")
+    val match = regex.find(trimmed)
+    if (match != null) {
+        val name = match.groupValues[1].trim()
+        val duration = match.groupValues[2].trim()
+        val rawUnit = match.groupValues[3].trim()
+        val unit = if (rawUnit.isBlank()) "分钟" else rawUnit
+        return ParsedExercise(name = name, duration = duration, unit = unit)
+    }
+    return ParsedExercise(name = trimmed, duration = null, unit = "")
+}
+
+/**
+ * 纵向时间轴条目：运动记录
+ * - 左侧类目名称固定为“🏃 运动”，样式统一
+ * - 右侧运动时长数字向右侧对齐，运动项目作为标签显示在数字左侧
+ * - 上方附一行小记录时间，长按弹出操作
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineItemExerciseRow(
     exerciseText: String,
-    timeText: String
+    timeText: String,
+    onLongClick: () -> Unit
 ) {
+    val parsed = remember(exerciseText) { parseExercise(exerciseText) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
         if (timeText.isNotBlank()) {
             Text(
@@ -877,17 +1111,76 @@ private fun TimelineItemExerciseRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 2.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "🏃", fontSize = 16.sp)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = exerciseText,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 18.sp
-            )
+            // 左侧：类别名字为运动
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text(text = "🏃", fontSize = 16.sp)
+                Text(
+                    text = "运动",
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // 右侧：运动项目标签在左，运动时长数字齐右
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                if (parsed.name.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(
+                                if (AppThemeColors.isDark) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = parsed.name,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (parsed.duration != null) {
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = parsed.duration,
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = parsed.unit,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        )
+                    }
+                } else if (parsed.name.isBlank()) {
+                    Text(
+                        text = exerciseText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.End
+                    )
+                }
+            }
         }
     }
 }
@@ -897,13 +1190,14 @@ private fun TimelineItemExerciseRow(
  * - 老年友好大字号（数值 21sp Bold）
  * - 偏高/达标/偏低状态标签居左
  * - 数值与单位齐右
- * - 独立无底色，上方附一行小记录时间
+ * - 已去除行内 X 删除按钮，长按即可弹出操作（修改/删除）
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineItemPostBGRow(
     entry: PostMealEntry,
     fallbackTime: String,
-    onDelete: () -> Unit
+    onLongClick: () -> Unit
 ) {
     val status = BGUtils.evaluatePostMeal(entry.value)
     val displayTime = entry.time.ifBlank { fallbackTime }
@@ -911,7 +1205,12 @@ private fun TimelineItemPostBGRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
         if (displayTime.isNotBlank()) {
             Text(
@@ -945,7 +1244,7 @@ private fun TimelineItemPostBGRow(
                 )
             }
 
-            // 右侧：偏高标签在左，数值在右齐右，最后带删除按钮
+            // 右侧：偏高标签在左，数值在右齐右（已删除 X 按钮，通过长按操作）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
@@ -988,18 +1287,6 @@ private fun TimelineItemPostBGRow(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "删除该笔餐后血糖",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                        modifier = Modifier.size(14.dp)
                     )
                 }
             }

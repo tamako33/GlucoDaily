@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -20,6 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.InsulinRecord
 import com.example.data.MealPeriod
+import com.example.data.MedCategory
 import com.example.data.MedicationData
 import com.example.ui.ItemType
 import com.example.ui.theme.AppThemeColors
@@ -604,17 +608,70 @@ fun AddItemDialog(
                     }
 
                     ItemType.MEDICATION -> {
+                        var selectedMedCategory by remember {
+                            mutableStateOf(
+                                if (medNameInputText in MedicationData.commonOralMeds) MedCategory.ORAL else MedCategory.INSULIN
+                            )
+                        }
                         var medDropdownExpanded by remember { mutableStateOf(false) }
                         val unit = MedicationData.detectUnit(medNameInputText)
+                        val currentMedList = if (selectedMedCategory == MedCategory.INSULIN) {
+                            MedicationData.commonInsulinMeds
+                        } else {
+                            MedicationData.commonOralMeds
+                        }
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // 药名选择
+                            // 1. 药物大类选择：胰岛素 vs 口服药 两个按钮
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .padding(2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(MedCategory.INSULIN, MedCategory.ORAL).forEach { cat ->
+                                    val isSel = selectedMedCategory == cat
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSel) TealPrimary else Color.Transparent,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                selectedMedCategory = cat
+                                                if (cat == MedCategory.INSULIN && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonOralMeds)) {
+                                                    medNameInputText = if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
+                                                } else if (cat == MedCategory.ORAL && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonInsulinMeds)) {
+                                                    medNameInputText = "二甲双胍"
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(vertical = 7.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = cat.icon, fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Text(
+                                                text = cat.label,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 2. 药名选择（随所选大类切换药物候选列表）
                             Box(modifier = Modifier.fillMaxWidth()) {
                                 OutlinedTextField(
                                     value = medNameInputText,
                                     onValueChange = { medNameInputText = it },
-                                    label = { Text("药物名称") },
-                                    placeholder = { Text("如：门冬胰岛素") },
+                                    label = { Text(if (selectedMedCategory == MedCategory.INSULIN) "胰岛素名称" else "口服药名称") },
+                                    placeholder = { Text(if (selectedMedCategory == MedCategory.INSULIN) "如：门冬胰岛素" else "如：二甲双胍") },
                                     trailingIcon = {
                                         IconButton(onClick = { medDropdownExpanded = true }) {
                                             Text("▼", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -633,13 +690,36 @@ fun AddItemDialog(
                                     expanded = medDropdownExpanded,
                                     onDismissRequest = { medDropdownExpanded = false }
                                 ) {
-                                    (MedicationData.commonInsulinMeds.take(4) + MedicationData.commonOralMeds.take(4)).forEach { med ->
+                                    currentMedList.forEach { med ->
                                         DropdownMenuItem(
                                             text = { Text(med) },
                                             onClick = {
                                                 medNameInputText = med
                                                 medDropdownExpanded = false
                                             }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 3. 常见药物快速点选胶囊
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(currentMedList.take(6)) { med ->
+                                    val isCurrent = medNameInputText == med
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isCurrent) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = if (isCurrent) BorderStroke(1.dp, TealPrimary) else null,
+                                        modifier = Modifier.clickable { medNameInputText = med }
+                                    ) {
+                                        Text(
+                                            text = med,
+                                            fontSize = 11.5.sp,
+                                            color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
