@@ -1,0 +1,1 @@
+{"name":"血糖胰岛素日志","description":"每日胰岛素与血糖管理日志，支持分餐记录、前晚关联、走势统计与本地数据管理。","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

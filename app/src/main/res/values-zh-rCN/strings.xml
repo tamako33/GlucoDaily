@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">每日胰岛血糖</string>
+
+    <string name="m3c_date_picker_title">选择日期</string>
+    <string name="m3c_date_picker_headline">选择的日期</string>
+    <string name="m3c_date_picker_switch_to_calendar_mode">切换至日历模式</string>
+    <string name="m3c_date_picker_switch_to_input_mode">切换至输入模式</string>
+    <string name="m3c_date_picker_switch_to_year_selection">切换至年份选择</string>
+    <string name="m3c_date_picker_switch_to_day_selection">切换至日期选择</string>
+    <string name="m3c_date_picker_scroll_to_previous_month">上个月</string>
+    <string name="m3c_date_picker_scroll_to_next_month">下个月</string>
+    <string name="m3c_date_picker_headline_description">当前选择：%1$s</string>
+    <string name="m3c_date_picker_today_description">今天</string>
+    <string name="m3c_date_picker_year_picker_pane_title">年份选择器</string>
+    <string name="m3c_date_input_title">输入日期</string>
+    <string name="m3c_date_input_headline">输入的日期</string>
+    <string name="m3c_date_input_label">日期</string>
+    <string name="m3c_date_input_invalid_range_input">日期超出范围</string>
+    <string name="m3c_date_input_invalid_not_allowed">不允许的日期</string>
+    <string name="m3c_date_input_invalid_year_range">年份超出范围</string>
+
+    <string name="date_picker_title">选择日期</string>
+    <string name="date_picker_headline">选择的日期</string>
+    <string name="date_picker_switch_to_calendar_mode">切换至日历模式</string>
+    <string name="date_picker_switch_to_input_mode">切换至输入模式</string>
+    <string name="date_picker_switch_to_year_selection">切换至年份选择</string>
+    <string name="date_picker_switch_to_day_selection">切换至日期选择</string>
+    <string name="date_picker_scroll_to_previous_month">上个月</string>
+    <string name="date_picker_scroll_to_next_month">下个月</string>
+    <string name="date_picker_headline_description">当前选择：%1$s</string>
+    <string name="date_picker_today_description">今天</string>
+    <string name="date_picker_year_picker_pane_title">年份选择器</string>
+</resources>

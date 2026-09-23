@@ -1,0 +1,323 @@
+package com.example.ui
+
+import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.AppDatabase
+import com.example.data.BGUtils
+import com.example.data.BackupParseResult
+import com.example.data.DataBackupManager
+import com.example.data.InsulinRecord
+import com.example.data.MealPeriod
+import com.example.data.InsulinRepository
+import com.example.data.ParsedVoiceRecord
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+enum class ViewMode {
+    CARDS,
+    TABLE
+}
+
+enum class TableDateRange(val label: String, val days: Int?) {
+    DAYS_7("近7天", 7),
+    DAYS_14("近14天", 14),
+    DAYS_30("近30天", 30),
+    ALL("全部", null)
+}
+
+enum class AppThemeMode(val title: String) {
+    SYSTEM("跟随系统"),
+    LIGHT("日间模式"),
+    DARK("夜间模式")
+}
+
+sealed class DialogState {
+    object None : DialogState()
+    data class Edit(
+        val initialRecord: InsulinRecord? = null,
+        val initialDate: String? = null,
+        val initialPeriod: MealPeriod? = null
+    ) : DialogState()
+    data class ConfirmDelete(val record: InsulinRecord) : DialogState()
+}
+
+class InsulinTrackerViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository: InsulinRepository
+    private val prefs = application.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+
+    private val _themeMode = MutableStateFlow(
+        runCatching {
+            AppThemeMode.valueOf(prefs.getString("theme_mode", AppThemeMode.SYSTEM.name) ?: AppThemeMode.SYSTEM.name)
+        }.getOrDefault(AppThemeMode.SYSTEM)
+    )
+    val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    init {
+        val db = AppDatabase.getDatabase(application)
+        repository = InsulinRepository(db.insulinDao())
+        viewModelScope.launch(Dispatchers.IO) {
+            if (repository.getRecordCount() <= 7) {
+                repository.insertAll(AppDatabase.INITIAL_MOCK_DATA)
+            }
+            repository.migrateLegacyDefaultMedNames()
+            val today = BGUtils.getTodayString()
+            repository.ensureTodayRecord(today)
+        }
+    }
+
+    val allRecords: StateFlow<List<InsulinRecord>> = repository.allRecords
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _viewMode = MutableStateFlow(ViewMode.CARDS)
+    val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
+
+    private val _tableDateRange = MutableStateFlow(TableDateRange.ALL)
+    val tableDateRange: StateFlow<TableDateRange> = _tableDateRange.asStateFlow()
+
+    private val _dialogState = MutableStateFlow<DialogState>(DialogState.None)
+    val dialogState: StateFlow<DialogState> = _dialogState.asStateFlow()
+
+    private val _pendingImport = MutableStateFlow<BackupParseResult.Success?>(null)
+    val pendingImport: StateFlow<BackupParseResult.Success?> = _pendingImport.asStateFlow()
+
+    private val _toastEvent = MutableSharedFlow<String>()
+    val toastEvent: SharedFlow<String> = _toastEvent.asSharedFlow()
+
+    private val _scrollToDateEvent = MutableSharedFlow<String>()
+    val scrollToDateEvent: SharedFlow<String> = _scrollToDateEvent.asSharedFlow()
+
+    val filteredRecords: StateFlow<List<InsulinRecord>> = combine(allRecords, searchQuery) { records, query ->
+        if (query.isBlank()) {
+            records
+        } else {
+            val q = query.trim().lowercase()
+            records.filter {
+                it.date.contains(q) || it.notes.lowercase().contains(q)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentTrendRecords: StateFlow<List<InsulinRecord>> = allRecords.combine(_searchQuery) { records, _ ->
+        // Take up to 7 most recent records and sort chronologically ascending for the chart
+        records.take(7).reversed()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val tableRecords: StateFlow<List<InsulinRecord>> = combine(filteredRecords, tableDateRange) { records, range ->
+        if (range.days == null) {
+            records
+        } else {
+            val cutoff = LocalDate.now().minusDays((range.days - 1).toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
+            records.filter { it.date >= cutoff }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setTableDateRange(range: TableDateRange) {
+        _tableDateRange.value = range
+    }
+
+    fun setViewMode(mode: ViewMode) {
+        _viewMode.value = mode
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        _themeMode.value = mode
+        prefs.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    fun cycleThemeMode() {
+        val next = when (_themeMode.value) {
+            AppThemeMode.SYSTEM -> AppThemeMode.LIGHT
+            AppThemeMode.LIGHT -> AppThemeMode.DARK
+            AppThemeMode.DARK -> AppThemeMode.SYSTEM
+        }
+        setThemeMode(next)
+    }
+
+    fun openAddDialog(date: String? = null, period: MealPeriod? = null) {
+        val targetDate = date ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val existingRecord = allRecords.value.find { it.date == targetDate }
+        val targetPeriod = period ?: existingRecord?.getNextRecommendedPeriod() ?: run {
+            val hour = java.time.LocalTime.now().hour
+            when {
+                hour < 11 -> MealPeriod.MORNING
+                hour < 15 -> MealPeriod.LUNCH
+                hour < 20 -> MealPeriod.DINNER
+                else -> MealPeriod.NIGHT
+            }
+        }
+        _dialogState.value = DialogState.Edit(
+            initialRecord = existingRecord,
+            initialDate = targetDate,
+            initialPeriod = targetPeriod
+        )
+    }
+
+    fun openEditDialog(record: InsulinRecord, period: MealPeriod? = null) {
+        val targetPeriod = period ?: record.getNextRecommendedPeriod()
+        _dialogState.value = DialogState.Edit(
+            initialRecord = record,
+            initialDate = record.date,
+            initialPeriod = targetPeriod
+        )
+    }
+
+    fun promptDelete(record: InsulinRecord) {
+        _dialogState.value = DialogState.ConfirmDelete(record)
+    }
+
+    fun dismissDialog() {
+        _dialogState.value = DialogState.None
+    }
+
+    fun saveRecord(record: InsulinRecord) {
+        viewModelScope.launch {
+            repository.insertRecord(record)
+            _toastEvent.emit("${record.date} 记录已保存")
+            _scrollToDateEvent.emit(record.date)
+            dismissDialog()
+        }
+    }
+
+    /**
+     * 智能语音录入保存：增量更新用户提到的字段，未提及的字段完整保留
+     */
+    fun saveVoiceRecord(parsed: ParsedVoiceRecord) {
+        viewModelScope.launch {
+            val existing = allRecords.value.find { it.date == parsed.date }
+            val merged = parsed.mergeInto(existing)
+            repository.insertRecord(merged)
+            val itemCount = parsed.getRecognizedItems().size
+            _toastEvent.emit("已智能录入 $itemCount 项数据至 ${parsed.date} 记录")
+            _scrollToDateEvent.emit(parsed.date)
+        }
+    }
+
+    /**
+     * 从语音识别直接跳转至完整编辑弹窗微调
+     */
+    fun openEditDialogFromVoice(parsed: ParsedVoiceRecord) {
+        val existing = allRecords.value.find { it.date == parsed.date }
+        val merged = parsed.mergeInto(existing)
+        _dialogState.value = DialogState.Edit(
+            initialRecord = merged,
+            initialDate = merged.date,
+            initialPeriod = parsed.targetPeriod ?: merged.getNextRecommendedPeriod()
+        )
+    }
+
+    fun confirmDelete(record: InsulinRecord) {
+        viewModelScope.launch {
+            repository.deleteRecord(record)
+            _toastEvent.emit("${record.date} 记录已删除")
+            dismissDialog()
+        }
+    }
+
+    fun resetToDemoData() {
+        viewModelScope.launch {
+            repository.resetToInitialData()
+            _toastEvent.emit("已恢复演示数据")
+        }
+    }
+
+    fun clearAllRecords() {
+        viewModelScope.launch {
+            repository.clearAll()
+            _toastEvent.emit("已清空所有记录")
+        }
+    }
+
+    /**
+     * 备份数据（ZIP 格式，包含所有字段完整数据，防丢失）
+     */
+    fun exportBackup(context: Context) {
+        val records = allRecords.value
+        if (records.isEmpty()) {
+            viewModelScope.launch {
+                _toastEvent.emit("暂无数据可备份")
+            }
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val zipFile = DataBackupManager.exportBackupZip(context, records)
+                val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                DataBackupManager.shareBackupZip(context, zipFile, today)
+            } catch (e: Exception) {
+                _toastEvent.emit("备份失败: ${e.localizedMessage ?: "未知错误"}")
+            }
+        }
+    }
+
+    /**
+     * 从用户选取的备份文件 URI 解析数据
+     */
+    fun importBackupFromUri(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = DataBackupManager.parseBackupFromUri(context, uri)) {
+                is BackupParseResult.Success -> {
+                    _pendingImport.value = result
+                }
+                is BackupParseResult.Error -> {
+                    _toastEvent.emit(result.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * 取消导入弹窗
+     */
+    fun dismissImportDialog() {
+        _pendingImport.value = null
+    }
+
+    /**
+     * 确认导入：
+     * overwrite = false: 合并追加（推荐，保留已有日期，更新重合日期，无损安全）
+     * overwrite = true: 全量覆盖（清空现有所有数据，完全恢复备份数据）
+     */
+    fun confirmImport(overwrite: Boolean) {
+        val importData = _pendingImport.value ?: return
+        _pendingImport.value = null
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (overwrite) {
+                    repository.clearAll()
+                }
+                repository.insertAll(importData.records)
+                val actionDesc = if (overwrite) "全量覆盖恢复" else "合并导入"
+                _toastEvent.emit("已成功${actionDesc} ${importData.count} 条记录")
+            } catch (e: Exception) {
+                _toastEvent.emit("导入数据保存失败: ${e.localizedMessage}")
+            }
+        }
+    }
+}
