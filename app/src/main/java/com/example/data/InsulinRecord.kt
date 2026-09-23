@@ -52,6 +52,8 @@ data class InsulinRecord(
     val nightDiet: String = "",
     val nightExercise: String = "",
 
+    val itemTimesJson: String = "",
+
     val notes: String = ""
 ) {
     val hasMorningData: Boolean
@@ -103,6 +105,83 @@ data class InsulinRecord(
             hasDinnerData && !hasNightData -> MealPeriod.NIGHT
             else -> getPeriodForTime()
         }
+    }
+
+    /**
+     * 获取指定时段与具体条目的记录时间（格式 HH:mm）
+     */
+    fun getItemTime(period: MealPeriod, itemKey: String): String {
+        if (itemTimesJson.isNotBlank()) {
+            val key = "${period.name.lowercase()}_$itemKey"
+            try {
+                val obj = org.json.JSONObject(itemTimesJson)
+                val t = obj.optString(key, "")
+                if (t.isNotBlank()) return t
+            } catch (_: Throwable) {
+                val regex = Regex("\"$key\"\\s*:\\s*\"([^\"]+)\"")
+                regex.find(itemTimesJson)?.groupValues?.get(1)?.let { return it }
+            }
+        }
+        // 智能兜底默认时间点，确保历史或模拟记录也整洁有序
+        return when (period) {
+            MealPeriod.MORNING -> when (itemKey) {
+                "preBG" -> "07:30"
+                "med" -> "07:45"
+                "diet" -> "08:00"
+                "exercise" -> "08:45"
+                else -> "08:00"
+            }
+            MealPeriod.LUNCH -> when (itemKey) {
+                "preBG" -> "11:45"
+                "med" -> "12:00"
+                "diet" -> "12:15"
+                "exercise" -> "13:00"
+                else -> "12:00"
+            }
+            MealPeriod.DINNER -> when (itemKey) {
+                "preBG" -> "17:45"
+                "med" -> "18:00"
+                "diet" -> "18:15"
+                "exercise" -> "19:15"
+                else -> "18:00"
+            }
+            MealPeriod.NIGHT -> when (itemKey) {
+                "preBG" -> "21:30"
+                "med" -> "21:45"
+                "diet" -> "21:00"
+                "exercise" -> "20:30"
+                else -> "21:30"
+            }
+        }
+    }
+
+    /**
+     * 关联更新指定时段条目的记录时间
+     */
+    fun withItemTime(period: MealPeriod, itemKey: String, time: String): InsulinRecord {
+        if (time.isBlank()) return this
+        val key = "${period.name.lowercase()}_$itemKey"
+        val map = mutableMapOf<String, String>()
+        if (itemTimesJson.isNotBlank()) {
+            try {
+                val obj = org.json.JSONObject(itemTimesJson)
+                val itKeys = obj.keys()
+                while (itKeys.hasNext()) {
+                    val k = itKeys.next()
+                    map[k] = obj.optString(k, "")
+                }
+            } catch (_: Throwable) {
+                val regex = Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"")
+                regex.findAll(itemTimesJson).forEach {
+                    map[it.groupValues[1]] = it.groupValues[2]
+                }
+            }
+        }
+        map[key] = time
+        val serialized = map.entries.joinToString(prefix = "{", postfix = "}", separator = ",") {
+            "\"${it.key}\":\"${it.value}\""
+        }
+        return this.copy(itemTimesJson = serialized)
     }
 
     companion object {

@@ -124,7 +124,8 @@ fun AddItemDialog(
     // 表单状态
     var bgInputText by remember { mutableStateOf("") }
     var dietInputText by remember { mutableStateOf("") }
-    var exerciseInputText by remember { mutableStateOf("") }
+    var exerciseNameInputText by remember { mutableStateOf("") }
+    var exerciseDurationInputText by remember { mutableStateOf("") }
     var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
     var medDoseInputText by remember { mutableStateOf("") }
     var medTimingChoice by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前") }
@@ -210,12 +211,20 @@ fun AddItemDialog(
             dietInputText.trim().isNotBlank()
         }
         ItemType.EXERCISE -> {
-            exerciseInputText.trim().isNotBlank()
+            exerciseNameInputText.trim().isNotBlank() || exerciseDurationInputText.trim().isNotBlank()
         }
     }
 
     fun submit(keepOpen: Boolean) {
         if (!isInputValid) return
+        val formattedExercise = when {
+            exerciseNameInputText.isNotBlank() && exerciseDurationInputText.isNotBlank() ->
+                "${exerciseNameInputText.trim()} ${exerciseDurationInputText.trim()}分钟"
+            exerciseNameInputText.isNotBlank() -> exerciseNameInputText.trim()
+            exerciseDurationInputText.isNotBlank() -> "${exerciseDurationInputText.trim()}分钟"
+            else -> ""
+        }
+        val recordTime = if (selectedItemType == ItemType.POST_MEAL_BG) postMealTimeInputText.trim() else nowTimeStr
         onSaveItem(
             selectedDate,
             selectedPeriod,
@@ -226,15 +235,16 @@ fun AddItemDialog(
             medDoseInputText.trim().toFloatOrNull(),
             medTimingChoice,
             postMealTagChoice,
-            postMealTimeInputText.trim(),
-            exerciseInputText.trim(),
+            recordTime,
+            formattedExercise,
             keepOpen
         )
         if (keepOpen) {
             bgInputText = ""
             dietInputText = ""
             medDoseInputText = ""
-            exerciseInputText = ""
+            exerciseNameInputText = ""
+            exerciseDurationInputText = ""
         }
     }
 
@@ -547,19 +557,49 @@ fun AddItemDialog(
 
                     ItemType.EXERCISE -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = exerciseInputText,
-                                onValueChange = { exerciseInputText = it },
-                                label = { Text("运动项目与时长") },
-                                placeholder = { Text("例: 散步30分钟、慢跑20分钟") },
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = TealPrimary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = exerciseNameInputText,
+                                    onValueChange = { exerciseNameInputText = it },
+                                    label = { Text("运动项目") },
+                                    placeholder = { Text("例: 散步、慢跑") },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1.3f)
+                                )
+
+                                OutlinedTextField(
+                                    value = exerciseDurationInputText,
+                                    onValueChange = { exerciseDurationInputText = it },
+                                    label = { Text("运动时长") },
+                                    placeholder = { Text("30") },
+                                    trailingIcon = {
+                                        Text(
+                                            text = "分钟",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        )
+                                    },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
 

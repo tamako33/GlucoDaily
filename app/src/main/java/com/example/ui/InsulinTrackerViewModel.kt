@@ -201,39 +201,46 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
     ) {
         viewModelScope.launch {
             val existing = allRecords.value.find { it.date == date } ?: InsulinRecord(date = date)
+            val recordTime = postMealTime.ifBlank {
+                val now = java.time.LocalTime.now()
+                String.format(java.util.Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
+            }
             val updated = when (itemType) {
                 ItemType.PRE_MEAL_BG -> {
                     if (bgValue != null) {
-                        when (period) {
+                        val base = when (period) {
                             MealPeriod.MORNING -> existing.copy(fastingBG = bgValue, preBfBG = bgValue)
                             MealPeriod.LUNCH -> existing.copy(preLunchBG = bgValue)
                             MealPeriod.DINNER -> existing.copy(preDinnerBG = bgValue)
                             MealPeriod.NIGHT -> existing.copy(preNightBG = bgValue)
                         }
+                        base.withItemTime(period, "preBG", recordTime)
                     } else {
                         existing
                     }
                 }
                 ItemType.DIET -> {
                     if (dietText.isNotBlank()) {
-                        when (period) {
+                        val base = when (period) {
                             MealPeriod.MORNING -> existing.copy(bfDiet = dietText.trim())
                             MealPeriod.LUNCH -> existing.copy(lunchDiet = dietText.trim())
                             MealPeriod.DINNER -> existing.copy(dinnerDiet = dietText.trim())
                             MealPeriod.NIGHT -> existing.copy(nightDiet = dietText.trim())
                         }
+                        base.withItemTime(period, "diet", recordTime)
                     } else {
                         existing
                     }
                 }
                 ItemType.EXERCISE -> {
                     if (exerciseText.isNotBlank()) {
-                        when (period) {
+                        val base = when (period) {
                             MealPeriod.MORNING -> existing.copy(bfExercise = exerciseText.trim())
                             MealPeriod.LUNCH -> existing.copy(lunchExercise = exerciseText.trim())
                             MealPeriod.DINNER -> existing.copy(dinnerExercise = exerciseText.trim())
                             MealPeriod.NIGHT -> existing.copy(nightExercise = exerciseText.trim())
                         }
+                        base.withItemTime(period, "exercise", recordTime)
                     } else {
                         existing
                     }
@@ -242,7 +249,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                     if (dose != null) {
                         val actualName = medName.trim().ifBlank { "胰岛素" }
                         val actualTiming = medTiming.trim().ifBlank { if (period == MealPeriod.NIGHT) "睡前" else "餐前" }
-                        when (period) {
+                        val base = when (period) {
                             MealPeriod.MORNING -> existing.copy(
                                 bfMedName = actualName,
                                 bfInsulin = dose,
@@ -264,6 +271,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                                 nightMedTiming = actualTiming
                             )
                         }
+                        base.withItemTime(period, "med", recordTime)
                     } else {
                         existing
                     }
@@ -271,7 +279,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                 ItemType.POST_MEAL_BG -> {
                     if (bgValue != null) {
                         val currentList = existing.getPostMealList(period).toMutableList()
-                        currentList.add(com.example.data.PostMealEntry(bgValue, postMealTime, postMealTag))
+                        currentList.add(com.example.data.PostMealEntry(bgValue, recordTime, postMealTag))
                         val newPrimary = currentList.firstOrNull()?.value
                         val serializedExtras = com.example.data.PostMealUtils.serializeEntries(currentList)
                         when (period) {

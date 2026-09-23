@@ -304,6 +304,7 @@ fun RecordCard(
                         }
 
                         TimelinePeriodSection(
+                            record = record,
                             period = period,
                             isLast = isLast,
                             preBG = preBG,
@@ -393,10 +394,11 @@ fun RecordCard(
 }
 
 /**
- * 单个时段的纵向时间轴区块（无外边框，每个条目独立平铺）
+ * 单个时段的纵向时间轴区块（竖排文字、时段色彩竖线、无大边框）
  */
 @Composable
 private fun TimelinePeriodSection(
+    record: InsulinRecord,
     period: MealPeriod,
     isLast: Boolean,
     preBG: Float?,
@@ -419,37 +421,69 @@ private fun TimelinePeriodSection(
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
     ) {
-        // 左侧时间轴轨道：节点圆圈 + 细连接线
+        // 左侧时间轴轨道：节点圆圈 + 竖线段 + 竖排文字 + 贯穿竖线（全使用时段专属主题色！）
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .width(32.dp)
                 .fillMaxHeight()
         ) {
+            // 顶部时段图标圆圈
             Box(
                 modifier = Modifier
-                    .size(26.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
-                    .background(themeColor.copy(alpha = if (AppThemeColors.isDark) 0.22f else 0.14f)),
+                    .background(themeColor.copy(alpha = if (AppThemeColors.isDark) 0.25f else 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = period.iconText,
-                    fontSize = 13.sp
+                    fontSize = 12.sp
                 )
             }
 
-            if (!isLast) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                )
+            // 竖线段 1（时段主题色）
+            Box(
+                modifier = Modifier
+                    .width(2.5.dp)
+                    .height(6.dp)
+                    .background(themeColor.copy(alpha = 0.55f))
+            )
+
+            // 竖排时段文字（晨\n间 等），时段专属主题色
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(themeColor.copy(alpha = if (AppThemeColors.isDark) 0.25f else 0.14f))
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    period.title.forEach { ch ->
+                        Text(
+                            text = ch.toString(),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = themeColor,
+                            lineHeight = 11.sp
+                        )
+                    }
+                }
             }
+
+            // 竖线段 2：使用该时段主题色贯穿向下
+            Box(
+                modifier = Modifier
+                    .width(2.5.dp)
+                    .weight(1f)
+                    .background(themeColor.copy(alpha = 0.45f))
+            )
         }
 
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(8.dp))
 
         // 右侧无边框条目流：仅排列有实际数据的条目
         Column(
@@ -458,52 +492,31 @@ private fun TimelinePeriodSection(
                 .padding(bottom = if (isLast) 2.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // 1. 时段标题行
+            // 1. 顶栏操作区（删去红色框住的“早餐时段”等标识，与左侧图标对齐）
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = period.title,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Box(
+                if (prevNightInfo != null && prevNightInfo.dose > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(themeColor.copy(alpha = if (AppThemeColors.isDark) 0.22f else 0.12f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                            .background(AppThemeColors.bedtimeColor.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = period.periodTag,
-                            fontSize = 10.sp,
+                            text = "昨夜: ${if (prevNightInfo.dose % 1f == 0f) prevNightInfo.dose.toInt() else prevNightInfo.dose}U",
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = themeColor
+                            color = AppThemeColors.bedtimeColor
                         )
                     }
-
-                    if (prevNightInfo != null && prevNightInfo.dose > 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(AppThemeColors.bedtimeColor.copy(alpha = 0.1f))
-                                .padding(horizontal = 5.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = "昨夜: ${if (prevNightInfo.dose % 1f == 0f) prevNightInfo.dose.toInt() else prevNightInfo.dose}U",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = AppThemeColors.bedtimeColor
-                            )
-                        }
-                    }
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
                 }
 
                 Row(
@@ -536,13 +549,14 @@ private fun TimelinePeriodSection(
                 }
             }
 
-            // 2. 独立条目：仅渲染有数据的项目（无大边框）
+            // 2. 独立条目：仅渲染有数据的项目（上方带微型时间，无灰底色）
             // 1) 餐前 / 空腹血糖
             if (preBG != null) {
                 TimelineItemPreBGRow(
                     label = preBGLabel,
                     value = preBG,
-                    isFasting = isFasting
+                    isFasting = isFasting,
+                    timeText = record.getItemTime(period, "preBG")
                 )
             }
 
@@ -551,24 +565,37 @@ private fun TimelinePeriodSection(
                 TimelineItemMedicationRow(
                     medName = medName,
                     dose = medDose,
-                    timing = medTiming
+                    timing = medTiming,
+                    timeText = record.getItemTime(period, "med")
                 )
             }
 
             // 3) 用餐情况
             if (dietText.isNotBlank()) {
-                TimelineItemDietRow(dietText = dietText)
+                TimelineItemDietRow(
+                    dietText = dietText,
+                    timeText = record.getItemTime(period, "diet")
+                )
             }
 
             // 4) 运动记录
             if (exerciseText.isNotBlank()) {
-                TimelineItemExerciseRow(exerciseText = exerciseText)
+                TimelineItemExerciseRow(
+                    exerciseText = exerciseText,
+                    timeText = record.getItemTime(period, "exercise")
+                )
             }
 
-            // 5) 餐后血糖（支持多条，每条为独立条目）
+            // 5) 餐后血糖（支持多条，每条为独立条目，上方带时间）
             postMealList.forEachIndexed { idx, entry ->
                 TimelineItemPostBGRow(
                     entry = entry,
+                    fallbackTime = when (period) {
+                        MealPeriod.MORNING -> "10:00"
+                        MealPeriod.LUNCH -> "14:15"
+                        MealPeriod.DINNER -> "20:15"
+                        MealPeriod.NIGHT -> "23:00"
+                    },
                     onDelete = { onDeletePostMeal(idx) }
                 )
             }
@@ -581,24 +608,37 @@ private fun TimelinePeriodSection(
  * - 老年友好大字号（数值 21sp Bold）
  * - 偏高/达标/偏低状态标签居左
  * - 数值与单位齐右
+ * - 独立无底色，上方附一行小记录时间
  */
 @Composable
 private fun TimelineItemPreBGRow(
     label: String,
     value: Float,
-    isFasting: Boolean
+    isFasting: Boolean,
+    timeText: String
 ) {
     val status = if (isFasting) BGUtils.evaluateFasting(value) else BGUtils.evaluatePreMeal(value)
 
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (AppThemeColors.isDark) 0.35f else 0.42f),
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp)
     ) {
+        if (timeText.isNotBlank()) {
+            Text(
+                text = timeText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 2.dp, bottom = 1.dp)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -671,25 +711,38 @@ private fun TimelineItemPreBGRow(
  * - 老年友好大字号（剂量 21sp Bold）
  * - 餐前/睡前时机标签在数字左边
  * - 剂量数值与单位齐右
+ * - 独立无底色，上方附一行小记录时间
  */
 @Composable
 private fun TimelineItemMedicationRow(
     medName: String,
     dose: Float,
-    timing: String
+    timing: String,
+    timeText: String
 ) {
     val displayMed = medName.ifBlank { "胰岛素" }
     val unit = MedicationData.detectUnit(displayMed)
 
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (AppThemeColors.isDark) 0.35f else 0.42f),
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp)
     ) {
+        if (timeText.isNotBlank()) {
+            Text(
+                text = timeText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 2.dp, bottom = 1.dp)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -755,19 +808,33 @@ private fun TimelineItemMedicationRow(
 }
 
 /**
- * 纵向时间轴条目：用餐情况
+ * 纵向时间轴条目：用餐情况（无底色，上方附一行小记录时间）
  */
 @Composable
-private fun TimelineItemDietRow(dietText: String) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (AppThemeColors.isDark) 0.35f else 0.42f),
-        modifier = Modifier.fillMaxWidth()
+private fun TimelineItemDietRow(
+    dietText: String,
+    timeText: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp)
     ) {
+        if (timeText.isNotBlank()) {
+            Text(
+                text = timeText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 2.dp, bottom = 1.dp)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "🍽️", fontSize = 16.sp)
@@ -783,19 +850,33 @@ private fun TimelineItemDietRow(dietText: String) {
 }
 
 /**
- * 纵向时间轴条目：运动记录
+ * 纵向时间轴条目：运动记录（无底色，上方附一行小记录时间）
  */
 @Composable
-private fun TimelineItemExerciseRow(exerciseText: String) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (AppThemeColors.isDark) 0.35f else 0.42f),
-        modifier = Modifier.fillMaxWidth()
+private fun TimelineItemExerciseRow(
+    exerciseText: String,
+    timeText: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp)
     ) {
+        if (timeText.isNotBlank()) {
+            Text(
+                text = timeText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 2.dp, bottom = 1.dp)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "🏃", fontSize = 16.sp)
@@ -816,27 +897,41 @@ private fun TimelineItemExerciseRow(exerciseText: String) {
  * - 老年友好大字号（数值 21sp Bold）
  * - 偏高/达标/偏低状态标签居左
  * - 数值与单位齐右
+ * - 独立无底色，上方附一行小记录时间
  */
 @Composable
 private fun TimelineItemPostBGRow(
     entry: PostMealEntry,
+    fallbackTime: String,
     onDelete: () -> Unit
 ) {
     val status = BGUtils.evaluatePostMeal(entry.value)
+    val displayTime = entry.time.ifBlank { fallbackTime }
 
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (AppThemeColors.isDark) 0.35f else 0.42f),
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp)
     ) {
+        if (displayTime.isNotBlank()) {
+            Text(
+                text = displayTime,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 2.dp, bottom = 1.dp)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左侧：图标 + 餐后阶段标签 + 测量具体时间
+            // 左侧：图标 + 餐后阶段标签
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
@@ -848,13 +943,6 @@ private fun TimelineItemPostBGRow(
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                if (entry.time.isNotBlank()) {
-                    Text(
-                        text = entry.time,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
-                    )
-                }
             }
 
             // 右侧：偏高标签在左，数值在右齐右，最后带删除按钮
