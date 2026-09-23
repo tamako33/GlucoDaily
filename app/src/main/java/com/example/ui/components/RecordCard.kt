@@ -119,7 +119,7 @@ fun RecordCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {

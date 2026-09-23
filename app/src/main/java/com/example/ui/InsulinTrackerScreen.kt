@@ -158,6 +158,7 @@ fun InsulinTrackerScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }
+    var isTrendExpanded by rememberSaveable { mutableStateOf(true) }
     val todayStr = remember { BGUtils.getTodayString() }
 
     LaunchedEffect(Unit) {
@@ -237,34 +238,33 @@ fun InsulinTrackerScreen(
                 .padding(innerPadding)
                 .statusBarsPadding()
                 .padding(horizontal = 14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(top = 2.dp, bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // 0. Top Header Component (跟随整个页面一起滑动，不固定在顶部)
             item {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp)),
+                        .clip(RoundedCornerShape(14.dp)),
                     color = Color.Transparent,
                     tonalElevation = 0.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(8.dp))
                                     .background(
                                         Brush.linearGradient(
                                             listOf(TealPrimaryLight, TealPrimaryDark)
@@ -276,22 +276,60 @@ fun InsulinTrackerScreen(
                                     imageVector = Icons.Default.Favorite,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
 
                             Text(
                                 text = "每日胰岛血糖",
-                                style = MaterialTheme.typography.titleMedium,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "${filteredRecords.size}条",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
+                            // View mode switcher (Cards vs Table)
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                                    .padding(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ViewToggleButton(
+                                    selected = viewMode == ViewMode.CARDS,
+                                    icon = Icons.Default.FormatListBulleted,
+                                    label = "卡片",
+                                    onClick = { viewModel.setViewMode(ViewMode.CARDS) },
+                                    tag = "view_toggle_cards"
+                                )
+
+                                ViewToggleButton(
+                                    selected = viewMode == ViewMode.TABLE,
+                                    icon = Icons.Default.TableChart,
+                                    label = "表格",
+                                    onClick = { viewModel.setViewMode(ViewMode.TABLE) },
+                                    tag = "view_toggle_table"
+                                )
+                            }
+
                             // 1. Manual Theme Switcher Button
                             val (themeIcon, themeDesc) = when (themeMode) {
                                 AppThemeMode.SYSTEM -> Icons.Default.BrightnessAuto to "当前跟随系统（点击切换）"
@@ -301,14 +339,14 @@ fun InsulinTrackerScreen(
                             IconButton(
                                 onClick = { viewModel.cycleThemeMode() },
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(30.dp)
                                     .testTag("theme_toggle_button")
                             ) {
                                 Icon(
                                     imageVector = themeIcon,
                                     contentDescription = themeDesc,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
@@ -316,14 +354,14 @@ fun InsulinTrackerScreen(
                                 IconButton(
                                     onClick = { showMenu = true },
                                     modifier = Modifier
-                                        .size(34.dp)
+                                        .size(30.dp)
                                         .testTag("overflow_menu_button")
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.MoreVert,
                                         contentDescription = "更多选项",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
 
@@ -497,72 +535,16 @@ fun InsulinTrackerScreen(
                 }
             }
 
-            // 1. Trend Chart
+            // 1. Trend Chart (紧凑瘦身 & 支持一键折叠/展开)
             item {
-                TrendChart(records = recentTrendRecords)
+                TrendChart(
+                    records = recentTrendRecords,
+                    isExpanded = isTrendExpanded,
+                    onToggleExpanded = { isTrendExpanded = !isTrendExpanded }
+                )
             }
 
-            // 2. Records Header & Mode Toggle (去除了多余的搜索框)
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Transparent)
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "记录明细",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "共 ${filteredRecords.size} 条",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // View mode switcher (Cards vs Table)
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        ViewToggleButton(
-                            selected = viewMode == ViewMode.CARDS,
-                            icon = Icons.Default.FormatListBulleted,
-                            label = "卡片",
-                            onClick = { viewModel.setViewMode(ViewMode.CARDS) },
-                            tag = "view_toggle_cards"
-                        )
-
-                        ViewToggleButton(
-                            selected = viewMode == ViewMode.TABLE,
-                            icon = Icons.Default.TableChart,
-                            label = "表格",
-                            onClick = { viewModel.setViewMode(ViewMode.TABLE) },
-                            tag = "view_toggle_table"
-                        )
-                    }
-                }
-            }
-
-            // 3. Animated Records Section (流畅切换过渡动画)
+            // 2. Animated Records Section (流畅切换过渡动画)
             item {
                 AnimatedContent(
                     targetState = viewMode,
