@@ -72,6 +72,17 @@ object VoiceRecognitionManager {
     private val _parsedRecord = MutableStateFlow(ParsedVoiceRecord(rawText = "", date = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)))
     val parsedRecord: StateFlow<ParsedVoiceRecord> = _parsedRecord.asStateFlow()
 
+    private val _requestShowOverlay = MutableStateFlow(false)
+    val requestShowOverlay: StateFlow<Boolean> = _requestShowOverlay.asStateFlow()
+
+    fun requestShowOverlay() {
+        _requestShowOverlay.value = true
+    }
+
+    fun clearShowOverlayRequest() {
+        _requestShowOverlay.value = false
+    }
+
     private var waveThread: Thread? = null
 
     @Volatile
@@ -379,6 +390,7 @@ object VoiceRecognitionManager {
             } else {
                 "已输入文字，未检测到有效数值"
             }
+            requestShowOverlay()
         } else {
             _parsedRecord.value = ParsedVoiceRecord(rawText = "", date = defaultDate)
             _statusText.value = "请按住说话或输入文本"

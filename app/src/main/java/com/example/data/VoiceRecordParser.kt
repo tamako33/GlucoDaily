@@ -431,11 +431,20 @@ object VoiceRecordParser {
                     }
                     if (bgMap["night_pre"] != null) preNightBG = bgMap["night_pre"]
 
-                    // 通用血糖（未指明餐段）
-                    if (bgMap["generic_pre"] != null || bgMap["generic_post"] != null || bgMap["generic"] != null) {
-                        val gVal = bgMap["generic_pre"] ?: bgMap["generic_post"] ?: bgMap["generic"]
-                        val isPost = bgMap["generic_post"] != null
-                        when (defaultPeriod) {
+                    // 通用血糖（未指明餐段，例如用户说“餐后半小时血糖6.8”、“餐前血糖5.8”或“血糖6.8”）
+                    val postVal = bgMap["post"] ?: bgMap["generic_post"]
+                    val preVal = bgMap["pre"] ?: bgMap["generic_pre"]
+                    val genericVal = bgMap["generic"]
+
+                    if (postVal != null || preVal != null || genericVal != null) {
+                        val isPost = postVal != null
+                        val gVal = postVal ?: preVal ?: genericVal
+                        val targetPeriod = if (isPost && defaultPeriod == MealPeriod.NIGHT) {
+                            MealPeriod.DINNER
+                        } else {
+                            defaultPeriod
+                        }
+                        when (targetPeriod) {
                             MealPeriod.MORNING -> {
                                 if (isPost) { postBfBG = gVal; bfPostTag = postTag } else fastingBG = gVal
                             }
@@ -717,12 +726,12 @@ object VoiceRecordParser {
     }
 
     /**
-     * 提取血糖值：严格过滤药物剂量，杜绝将“打6单位”中的6误识别为血糖
+     * 提取血糖值：严格过滤药物剂量及时间量词，杜绝将“打6单位”中的6或“餐后2小时”中的2误识别为血糖
      */
     private fun extractBloodGlucose(text: String, period: MealPeriod?): Map<String, Float> {
         val result = mutableMapOf<String, Float>()
 
-        // 辅助函数：校验匹配到的数字是否紧跟用药量词（单位/U/片/粒等），如果是则坚决不是血糖
+        // 辅助函数：校验匹配到的数字是否紧跟用药量词（单位/U/片/粒等），或者紧跟时间/单位词（小时/h/分钟/岁/点等），如果是则坚决不是血糖
         fun isValidBGNumber(posEnd: Int): Boolean {
             if (posEnd >= text.length) return true
             val following = text.substring(posEnd).trimStart()
@@ -732,11 +741,23 @@ object VoiceRecordParser {
                     return false
                 }
             }
+            // 重点过滤时间、阶段量词（如 2小时、半小时、1h、40分钟等，这类数字是时长/阶段，绝对不是血糖值）
+            val nonBgUnits = listOf(
+                "小时", "个半小时", "个钟头", "个钟", "h", "H", "分钟", "分种", "分", "min",
+                "点", "岁", "年", "天", "日", "号", "周", "月", "秒", "倍", "次", "顿"
+            )
+            for (nu in nonBgUnits) {
+                if (following.startsWith(nu)) {
+                    return false
+                }
+            }
             return true
         }
 
+        val stagePattern = """(?:半小时|半个(?:小时|钟头|钟)|(?:一个半|1个半)个?小时|[1234一二三四两]个?半小时|[1234一二三四两]个?小时|[0.51234]h)"""
+
         // 1. 空腹 / 晨起血糖
-        val fastingPat = Pattern.compile("""(?:空腹|晨起)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""")
+        val fastingPat = Pattern.compile("""(?:空腹|晨起)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""")
         val mFasting = fastingPat.matcher(text)
         if (mFasting.find()) {
             if (isValidBGNumber(mFasting.end(1))) {
@@ -745,7 +766,7 @@ object VoiceRecordParser {
         }
 
         // 2. 餐前 / 饭前血糖
-        val prePat = Pattern.compile("""(?:餐前|饭前)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""")
+        val prePat = Pattern.compile("""(?:餐前|饭前)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""")
         val mPre = prePat.matcher(text)
         if (mPre.find()) {
             if (isValidBGNumber(mPre.end(1))) {
@@ -755,18 +776,20 @@ object VoiceRecordParser {
 
         // 3. 餐后 / 饭后血糖
         val postPat = Pattern.compile(
-            """(?:餐后(?:半小时|[1234一二三四两]小时|[0.51234]h)?|饭后(?:半小时|[1234一二三四两]小时|[0.51234]h)?|(?:半小时|[1234一二三四两]小时)前(?:吃的饭|吃完饭|吃过饭|吃完了|吃的)?(?:我现在)?|刚吃完(?:半小时|[123]小时)?)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""",
+            """(?:餐后|饭后)(?:$stagePattern)?(?:的|的时候|测的|测得|测出来的)?\s*(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)|(?:(?:$stagePattern)前(?:吃的饭|吃完饭|吃过饭|吃完了|吃的)?(?:我现在)?|刚吃完(?:$stagePattern)?)(?:的)?\s*(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""",
             Pattern.CASE_INSENSITIVE
         )
         val mPost = postPat.matcher(text)
         if (mPost.find()) {
-            if (isValidBGNumber(mPost.end(1))) {
-                mPost.group(1)?.toFloatOrNull()?.let { if (it in 1.5f..33.3f) result["post"] = it }
+            val numStr = mPost.group(1) ?: mPost.group(2)
+            val posEnd = if (mPost.group(1) != null) mPost.end(1) else mPost.end(2)
+            if (isValidBGNumber(posEnd)) {
+                numStr?.toFloatOrNull()?.let { if (it in 1.5f..33.3f) result["post"] = it }
             }
         }
 
         // 4. 睡前 / 夜间血糖
-        val nightPat = Pattern.compile("""(?:睡前|夜间)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""")
+        val nightPat = Pattern.compile("""(?:睡前|夜间)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""")
         val mNight = nightPat.matcher(text)
         if (mNight.find()) {
             if (isValidBGNumber(mNight.end(1))) {
@@ -776,14 +799,14 @@ object VoiceRecordParser {
 
         // 5. 跨餐段的明确修饰
         val specificPatterns = mapOf(
-            "bf_pre" to Pattern.compile("""(?:早[餐饭]前|早餐餐前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "bf_post" to Pattern.compile("""(?:早[餐饭]后|早餐餐后)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
-            "lunch_pre" to Pattern.compile("""(?:午[餐饭]前|中午餐前|中饭前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "lunch_post" to Pattern.compile("""(?:午[餐饭]后|中午餐后|中饭后)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
-            "dinner_pre" to Pattern.compile("""(?:晚[餐饭]前|晚餐餐前|晚上餐前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "dinner_post" to Pattern.compile("""(?:晚[餐饭]后|晚餐餐后|晚上餐后)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
-            "night_pre" to Pattern.compile("""(?:睡前|夜间)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "night_post" to Pattern.compile("""(?:睡前|夜间)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
+            "bf_pre" to Pattern.compile("""(?:早[餐饭]前|早餐餐前)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)"""),
+            "bf_post" to Pattern.compile("""(?:早[餐饭]后|早餐餐后)(?:$stagePattern)?(?:的|的时候|测的|测得|测出来的)?\s*(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "lunch_pre" to Pattern.compile("""(?:午[餐饭]前|中午餐前|中饭前)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)"""),
+            "lunch_post" to Pattern.compile("""(?:午[餐饭]后|中午餐后|中饭后)(?:$stagePattern)?(?:的|的时候|测的|测得|测出来的)?\s*(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "dinner_pre" to Pattern.compile("""(?:晚[餐饭]前|晚餐餐前|晚上餐前)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)"""),
+            "dinner_post" to Pattern.compile("""(?:晚[餐饭]后|晚餐餐后|晚上餐后)(?:$stagePattern)?(?:的|的时候|测的|测得|测出来的)?\s*(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "night_pre" to Pattern.compile("""(?:睡前|夜间)(?:的)?(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)"""),
+            "night_post" to Pattern.compile("""(?:睡前|夜间)(?:$stagePattern)?(?:的|的时候|测的|测得|测出来的)?\s*(?:血糖)?(?:是|为|到|测得|测了|有)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
         )
 
         for ((key, pat) in specificPatterns) {
@@ -797,7 +820,7 @@ object VoiceRecordParser {
 
         // 6. 包含明确“血糖”二字，或者带 mmol/L 单位的数值
         if (result.isEmpty()) {
-            val bgGeneralPat = Pattern.compile("""(?:血糖(?:是|为|测了|到|测得)?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:mmol|mmol/L))""")
+            val bgGeneralPat = Pattern.compile("""(?:血糖(?:是|为|测了|到|测得|有)?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:mmol|mmol/L))""")
             val mGeneral = bgGeneralPat.matcher(text)
             if (mGeneral.find()) {
                 val numStr = mGeneral.group(1) ?: mGeneral.group(2)
@@ -826,11 +849,11 @@ object VoiceRecordParser {
 
     private fun extractPostMealTag(subText: String): String {
         return when {
-            subText.contains("半小时") || subText.contains("0.5") || subText.contains("30分") || subText.contains("三十分") -> "餐后半小时"
-            subText.contains("1小时") || subText.contains("一小时") || subText.contains("1h", ignoreCase = true) || subText.contains("60分") -> "餐后1h"
-            subText.contains("3小时") || subText.contains("三小时") || subText.contains("3h", ignoreCase = true) -> "餐后3h"
-            subText.contains("4小时") || subText.contains("四小时") || subText.contains("4h", ignoreCase = true) -> "餐后4h"
-            subText.contains("2小时") || subText.contains("两小时") || subText.contains("二小时") || subText.contains("2h", ignoreCase = true) || subText.contains("120分") -> "餐后2h"
+            subText.contains("半小时") || subText.contains("半个") || subText.contains("0.5") || subText.contains("30分") || subText.contains("三十分") -> "餐后半小时"
+            subText.contains("1小时") || subText.contains("一小时") || subText.contains("1个小时") || subText.contains("一个小时") || subText.contains("1h", ignoreCase = true) || subText.contains("60分") -> "餐后1h"
+            subText.contains("3小时") || subText.contains("三小时") || subText.contains("3个小时") || subText.contains("三个小时") || subText.contains("3h", ignoreCase = true) -> "餐后3h"
+            subText.contains("4小时") || subText.contains("四小时") || subText.contains("4个小时") || subText.contains("四个小时") || subText.contains("4h", ignoreCase = true) -> "餐后4h"
+            subText.contains("2小时") || subText.contains("两小时") || subText.contains("二小时") || subText.contains("2个小时") || subText.contains("两个小时") || subText.contains("2h", ignoreCase = true) || subText.contains("120分") -> "餐后2h"
             else -> "餐后2h" // 语音识别若未特别指明餐后多少小时，一律默认为餐后2小时
         }
     }
@@ -838,9 +861,28 @@ object VoiceRecordParser {
     private fun extractExercise(text: String, period: MealPeriod?): String? {
         if (text.isBlank()) return null
 
-        // 倒装句式 1: 动词 + 时长 + 的? + 运动项目名，如 "打了半小时八段锦"、"打了40分钟八段锦"、"练了20分钟瑜伽"、"跑了半小时步"、"走了40分钟路"
+        val durPatternStr = """(?:\d+(?:\.\d+)?\s*(?:个?半小时|个?小时|分钟|分种|分|min|h)|(?:一个半|1个半|大半|半)个?(?:小时|钟头|钟)?|(?:一|两|二|三|四|1|2|3|4)个?(?:半小时|小时|钟头|钟))"""
+
+        fun normalizeExerciseDuration(durRaw: String): String {
+            val s = durRaw.trim()
+            return when {
+                s.contains("一个半") || s.contains("1个半") || s.contains("1.5小时") || s.contains("1.5h") -> "90分钟"
+                s.contains("半") -> "30分钟"
+                s.contains("两") || s.contains("二") || s.contains("2小时") || s.contains("2个") -> "120分钟"
+                s.contains("一小时") || s.contains("1小时") || s.contains("一个") || s.contains("1h") -> "60分钟"
+                s.contains("三") || s.contains("3小时") || s.contains("3个") -> "180分钟"
+                else -> {
+                    val m = Regex("""(\d+(?:\.\d+)?)""").find(s)
+                    val num = m?.groupValues?.get(1) ?: "30"
+                    val unit = if (s.contains("小时") || s.contains("h", ignoreCase = true)) "小时" else "分钟"
+                    "$num$unit"
+                }
+            }
+        }
+
+        // 倒装句式 1: 动词 + 时长 + 的? + 运动项目名，如 "打了半小时八段锦"、"打了半个小时八段锦"、"练了20分钟瑜伽"、"跑了半小时步"、"走了40分钟路"
         val invertedPat = Pattern.compile(
-            """(?:去|进行了|做了|完成了|打了|练了|跑了|走了|跳了|游了|骑了)?\s*(\d+(?:小时|分钟|个半小时)?|一个半小时|1个半小时|半小时|一小时|两小时)\s*(?:的)?\s*(八段锦|太极拳|太极|散步|慢跑|快走|跑步|游泳|骑车|骑行|瑜伽|健身|跳操|跳绳|拉伸|步|路|操)"""
+            """(?:去|进行了|做了|完成了|打了|练了|跑了|走了|跳了|游了|骑了)?\s*($durPatternStr)\s*(?:的|大约|大概|左右)?\s*(八段锦|太极拳|打太极|太极|散步|慢跑|快走|跑步|游泳|骑车|骑行|瑜伽|健身|跳操|跳绳|拉伸|步|路|车|操)"""
         )
         val mInv = invertedPat.matcher(text)
         if (mInv.find()) {
@@ -849,56 +891,39 @@ object VoiceRecordParser {
             val sportName = when (nameRaw) {
                 "步" -> "跑步"
                 "路" -> "散步"
+                "车" -> "骑车"
                 "操" -> "做操"
                 else -> nameRaw
             }
-            val durNorm = when {
-                durRaw.contains("一个半小时") || durRaw.contains("1个半小时") -> "90分钟"
-                durRaw.contains("半小时") -> "30分钟"
-                durRaw.contains("一小时") -> "60分钟"
-                durRaw.contains("两小时") -> "120分钟"
-                else -> durRaw
-            }
+            val durNorm = normalizeExerciseDuration(durRaw)
             if (sportName.isNotBlank() && durNorm.isNotBlank()) {
                 return "$sportName $durNorm"
             }
         }
 
-        // 标准句式 2: 运动项目名 + 了? + 时长，如 "散步了40分钟"、"八段锦半小时"、"慢跑30分钟"
+        // 标准句式 2: 运动项目名 + 了? + 时长，如 "散步了40分钟"、"散步了半个小时"、"八段锦半小时"、"慢跑30分钟"
         val standardPat = Pattern.compile(
-            """(?:去|进行了|做了|完成了|打了|练了)?\s*(散步|慢跑|快走|跑步|游泳|骑车|骑行|打太极|太极拳|太极|瑜伽|健身|八段锦|跳操|跳绳|运动|活动|锻炼)\s*(?:了)?\s*(\d+(?:小时|分钟|个半小时)?|一个半小时|1个半小时|半小时|一小时|两小时)?"""
+            """(?:去|进行了|做了|完成了|打了|练了)?\s*(八段锦|太极拳|打太极|太极|散步|慢跑|快走|跑步|游泳|骑车|骑行|瑜伽|健身|跳操|跳绳|运动|活动|锻炼)\s*(?:了)?\s*(?:约|大概|大约)?\s*($durPatternStr)?"""
         )
         val mStd = standardPat.matcher(text)
         if (mStd.find()) {
             val p1 = mStd.group(1) ?: ""
             val p2 = if (mStd.groupCount() >= 2) (mStd.group(2) ?: "") else ""
-            val durNorm = when {
-                p2.contains("一个半小时") || p2.contains("1个半小时") -> "90分钟"
-                p2.contains("半小时") -> "30分钟"
-                p2.contains("一小时") -> "60分钟"
-                p2.contains("两小时") -> "120分钟"
-                else -> p2
-            }
+            val durNorm = if (p2.isNotBlank()) normalizeExerciseDuration(p2) else ""
             val res = (if (durNorm.isNotBlank()) "$p1 $durNorm" else p1).trim()
             if (res.length >= 2 && !res.contains("血糖") && !res.contains("胰岛素")) {
                 return res
             }
         }
 
-        // 句式 3: 纯动词 + 时长，如 "运动了半小时"、"走了40分钟"、"跑了半小时"
+        // 句式 3: 纯动词 + 时长，如 "运动了半小时"、"走了40分钟"、"跑了半小时"、"走了半个小时"
         val verbPat = Pattern.compile(
-            """(?:运动|锻炼|活动|走路|散步|跑步|慢跑)(?:了)?\s*(\d+(?:小时|分钟|个半小时)?|一个半小时|1个半小时|半小时|一小时|两小时)"""
+            """(?:运动|锻炼|活动|走路|散步|跑步|慢跑|快走|游泳|骑车)(?:了)?\s*(?:约|大概|大约)?\s*($durPatternStr)"""
         )
         val mV = verbPat.matcher(text)
         if (mV.find()) {
             val durRaw = mV.group(1) ?: ""
-            val durNorm = when {
-                durRaw.contains("一个半小时") || durRaw.contains("1个半小时") -> "90分钟"
-                durRaw.contains("半小时") -> "30分钟"
-                durRaw.contains("一小时") -> "60分钟"
-                durRaw.contains("两小时") -> "120分钟"
-                else -> durRaw
-            }
+            val durNorm = normalizeExerciseDuration(durRaw)
             return "散步 $durNorm"
         }
 
@@ -908,10 +933,10 @@ object VoiceRecordParser {
     private fun extractDiet(text: String, period: MealPeriod?): String? {
         if (text.isBlank()) return null
 
-        // 饮食引导词模式
+        // 饮食引导词模式（剔除单字“吃/喝”，避免将“吃完饭”中的“完饭”当成具体食物）
         val leadPatterns = listOf(
             // 明确的餐别与饮食动词复合引导，如："早饭吃的是"、"早餐吃了点"、"早上吃了"、"午餐喝了"、"晚餐吃的"
-            Pattern.compile("""(?:早[餐饭]|晨[起间]|早晨|早上|午[餐饭]|中午|中饭|晚[餐饭]|晚上|晚间|睡前|夜间|夜宵|加餐)?\s*(?:饮食(?:是|为|记录)?|餐食(?:是|为|记录)?|食谱(?:是|为)?|吃的是|吃了点|吃了|吃的|吃|喝的是|喝了点|喝了|喝|早[餐饭]是|午[餐饭]是|晚[餐饭]是|睡前是|加餐是|夜宵是)\s*"""),
+            Pattern.compile("""(?:早[餐饭]|晨[起间]|早晨|早上|午[餐饭]|中午|中饭|晚[餐饭]|晚上|晚间|睡前|夜间|夜宵|加餐)?\s*(?:饮食(?:是|为|记录)?|餐食(?:是|为|记录)?|食谱(?:是|为)?|吃的是|吃了点|吃了|吃的|喝的是|喝了点|喝了|喝的|早[餐饭]是|午[餐饭]是|晚[餐饭]是|睡前是|加餐是|夜宵是)\s*"""),
             // 纯餐别冒号或紧跟食物引导，如："早餐：包子馒头"、"早饭 包子稀饭"
             Pattern.compile("""(?:早[餐饭]|晨[起间]|早晨|午[餐饭]|晚[餐饭]|夜宵|加餐)\s*[:：]\s*""")
         )
@@ -922,7 +947,7 @@ object VoiceRecordParser {
             "用药", "口服", "单位", "胰岛素", "二甲双胍", "门冬", "甘精", "赖脯", "阿卡波糖",
             "血压", "心率", "体温", "体重", "量了", "高了", "低了", "不舒服", "头晕", "心慌", "出汗",
             "然后", "接着", "之后", "后来", "现在", "等会儿", "一会儿", "打算", "准备", "去上班", "去买菜", "去散步",
-            "运动", "散步", "跑步", "天气", "心情", "挺好", "不错", "感觉"
+            "运动", "散步", "跑步", "天气", "心情", "挺好", "不错", "感觉", "吃完", "吃过", "用完", "用过"
         )
 
         // 常见食物/饮品名词或量词特征库（用于校验后续子句是否为真正的餐食补充）
@@ -963,7 +988,7 @@ object VoiceRecordParser {
                         val cleanedClause = cleanDietString(clause)
 
                         if (i == 0) {
-                            // 第一分句：必须包含有效内容且不能是纯医学词汇
+                            // 第一分句：必须包含有效内容且不能是纯医学词汇或非食物动词
                             if (isValidDiet(cleanedClause)) {
                                 validFoodClauses.add(cleanedClause)
                             }
@@ -1016,6 +1041,16 @@ object VoiceRecordParser {
 
     private fun isValidDiet(s: String): Boolean {
         if (s.isBlank() || s.length < 2) return false
+        val trimmed = s.trim()
+        // 必须彻底剔除各类泛指吃饭/完成用餐等非具体菜品名词
+        val nonFoodTerms = setOf(
+            "完饭", "吃饭", "吃了饭", "吃完饭", "吃过饭", "用完餐", "用过餐", "用餐",
+            "早饭", "午饭", "晚饭", "中饭", "饭", "饭菜", "正餐", "大餐",
+            "饱了", "吃饱", "吃饱了", "完了", "东西", "食物", "餐食", "饮食",
+            "了饭", "过饭", "顿饭", "一顿饭", "这顿饭", "饭后", "餐后", "饭前", "餐前", "好饭"
+        )
+        if (nonFoodTerms.contains(trimmed)) return false
+
         // 杜绝将用药或血糖识别为饮食
         val invalidKeywords = listOf("血糖", "单位", "胰岛素", "二甲双胍", "门冬", "甘精", "mmol", "毫摩")
         for (kw in invalidKeywords) {

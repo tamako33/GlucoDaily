@@ -155,6 +155,13 @@ fun InsulinTrackerScreen(
     var showVoiceDialog by rememberSaveable { mutableStateOf(false) }
     var isHoldingVoice by remember { mutableStateOf(false) }
     var showSiriVoiceOverlay by remember { mutableStateOf(false) }
+    val requestShowVoice by com.example.data.VoiceRecognitionManager.requestShowOverlay.collectAsStateWithLifecycle()
+    LaunchedEffect(requestShowVoice) {
+        if (requestShowVoice) {
+            showSiriVoiceOverlay = true
+            com.example.data.VoiceRecognitionManager.clearShowOverlayRequest()
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }

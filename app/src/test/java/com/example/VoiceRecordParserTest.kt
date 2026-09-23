@@ -187,4 +187,62 @@ class VoiceRecordParserTest {
         assertTrue(exStr!!.contains("散步"))
         assertTrue(exStr.contains("30") || exStr.contains("半小时"))
     }
+
+    @Test
+    fun testLunchFinishMealWalkHalfHourNoFakeDiet() {
+        // “我中午吃完饭散步了半个小时。”
+        val input = "我中午吃完饭散步了半个小时。"
+        val parsed = com.example.data.VoiceRecognitionService.parseOffline(input)
+
+        assertEquals(com.example.data.MealPeriod.LUNCH, parsed.targetPeriod)
+        // 验证：绝不误识别出“完饭”这种荒谬的饮食！
+        assertNull("不应将'完饭'或动作词识别为具体食物", parsed.lunchDiet)
+
+        // 验证：运动时长“半个小时”被准确提取并归一化为30分钟
+        assertNotNull("必须识别出午间运动", parsed.lunchExercise)
+        val exStr = parsed.lunchExercise!!
+        assertTrue("必须包含散步", exStr.contains("散步"))
+        assertTrue("必须包含30或半小时", exStr.contains("30") || exStr.contains("半小时"))
+
+        val parsedEx = com.example.data.parseExercise(exStr)
+        assertEquals("散步", parsedEx.name)
+        assertEquals("30", parsedEx.duration)
+        assertEquals("分钟", parsedEx.unit)
+    }
+
+    @Test
+    fun testDinnerPostMeal2Hours10BG() {
+        // “我今天晚餐餐后2小时的血糖是10.0。”
+        val input = "我今天晚餐餐后2小时的血糖是10.0。"
+        val parsed = com.example.data.VoiceRecognitionService.parseOffline(input)
+
+        // 验证：血糖值绝对不能识别成 2.0，必须是 10.0！
+        assertEquals(10.0f, parsed.postDinnerBG ?: 0f, 0.01f)
+        assertEquals("餐后2h", parsed.dinnerPostTag)
+    }
+
+    @Test
+    fun testMoreColloquialExerciseAndPostBG() {
+        // 1. “我今天餐后2小时的血糖是10.0”
+        val p1 = com.example.data.VoiceRecordParser.parse("我今天餐后2小时的血糖是10.0")
+        val bg1 = p1.postBfBG ?: p1.postLunchBG ?: p1.postDinnerBG ?: p1.postNightBG
+        assertEquals(10.0f, bg1 ?: 0f, 0.01f)
+
+        // 2. “早餐餐后半个小时测得血糖6.5”
+        val p2 = com.example.data.VoiceRecognitionService.parseOffline("早餐餐后半个小时测得血糖6.5")
+        assertEquals(6.5f, p2.postBfBG ?: 0f, 0.01f)
+        assertEquals("餐后半小时", p2.bfPostTag)
+
+        // 3. “散步了一个小时”
+        val ex3 = com.example.data.parseExercise("散步了一个小时")
+        assertEquals("散步", ex3.name)
+        assertEquals("60", ex3.duration)
+        assertEquals("分钟", ex3.unit)
+
+        // 4. “散步了两个小时”
+        val ex4 = com.example.data.parseExercise("散步了两个小时")
+        assertEquals("散步", ex4.name)
+        assertEquals("120", ex4.duration)
+        assertEquals("分钟", ex4.unit)
+    }
 }

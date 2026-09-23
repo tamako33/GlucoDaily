@@ -68,6 +68,11 @@ class MainActivity : ComponentActivity() {
     // 检查冷启动时外部应用传入的 ZIP 备份文件
     incomingBackupUri.value = extractBackupUri(intent)
 
+    if (intent?.hasExtra("test_voice_text") == true) {
+      val text = intent.getStringExtra("test_voice_text") ?: ""
+      com.example.data.VoiceRecognitionManager.setCustomText(text)
+    }
+
     setContent {
       val trackerViewModel: InsulinTrackerViewModel = viewModel()
       val themeMode by trackerViewModel.themeMode.collectAsStateWithLifecycle()
@@ -111,6 +116,10 @@ class MainActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+    if (intent.hasExtra("test_voice_text")) {
+      val text = intent.getStringExtra("test_voice_text") ?: ""
+      com.example.data.VoiceRecognitionManager.setCustomText(text)
+    }
     // 当 App 已在后台运行时，用户从外部文件管理器点击“用其他应用打开”唤醒本界面
     incomingBackupUri.value = extractBackupUri(intent)
   }
