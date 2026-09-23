@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -99,6 +101,7 @@ fun AddItemDialog(
         medTiming: String,
         postMealTag: String,
         postMealTime: String,
+        exerciseText: String,
         keepDialogOpen: Boolean
     ) -> Unit
 ) {
@@ -121,6 +124,7 @@ fun AddItemDialog(
     // 表单状态
     var bgInputText by remember { mutableStateOf("") }
     var dietInputText by remember { mutableStateOf("") }
+    var exerciseInputText by remember { mutableStateOf("") }
     var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
     var medDoseInputText by remember { mutableStateOf("") }
     var medTimingChoice by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前") }
@@ -205,6 +209,9 @@ fun AddItemDialog(
         ItemType.DIET -> {
             dietInputText.trim().isNotBlank()
         }
+        ItemType.EXERCISE -> {
+            exerciseInputText.trim().isNotBlank()
+        }
     }
 
     fun submit(keepOpen: Boolean) {
@@ -220,12 +227,14 @@ fun AddItemDialog(
             medTimingChoice,
             postMealTagChoice,
             postMealTimeInputText.trim(),
+            exerciseInputText.trim(),
             keepOpen
         )
         if (keepOpen) {
             bgInputText = ""
             dietInputText = ""
             medDoseInputText = ""
+            exerciseInputText = ""
         }
     }
 
@@ -233,11 +242,15 @@ fun AddItemDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.5f))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onDismiss
-            ),
+            )
+            .padding(horizontal = 16.dp, vertical = 20.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -253,7 +266,6 @@ fun AddItemDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
-                    .imePadding()
                     .padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -349,7 +361,7 @@ fun AddItemDialog(
                     }
                 }
 
-                // 3. 条目类型切换分段胶囊（1 行极简设计）
+                // 3. 条目类型切换分段胶囊（1 行 5 项极简设计）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -365,6 +377,7 @@ fun AddItemDialog(
                             ItemType.DIET -> "🍽️" to "用餐"
                             ItemType.MEDICATION -> "💊" to "用药"
                             ItemType.POST_MEAL_BG -> "📈" to "餐后"
+                            ItemType.EXERCISE -> "🏃" to "运动"
                         }
                         Box(
                             modifier = Modifier
@@ -377,7 +390,7 @@ fun AddItemDialog(
                         ) {
                             Text(
                                 text = "$icon $label",
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -417,7 +430,7 @@ fun AddItemDialog(
                                         shape = RoundedCornerShape(8.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                         modifier = Modifier.clickable {
-                                            val cur = bgInputText.toFloatOrNull() ?: 6.0f
+                                             val cur = bgInputText.toFloatOrNull() ?: 6.0f
                                             bgInputText = String.format(Locale.US, "%.1f", (cur - 0.1f).coerceAtLeast(0.5f))
                                         }
                                     ) {
@@ -432,26 +445,6 @@ fun AddItemDialog(
                                         }
                                     ) {
                                         Text("+0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
-                                    }
-                                }
-                            }
-
-                            // 常用数值快捷胶囊
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(5.0f, 5.5f, 6.0f, 6.5f, 7.0f, 7.5f).forEach { v ->
-                                    val isCur = bgInputText == v.toString()
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isCur) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                        modifier = Modifier.clickable { bgInputText = v.toString() }
-                                    ) {
-                                        Text(
-                                            text = "$v",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCur) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                        )
                                     }
                                 }
                             }
@@ -530,26 +523,6 @@ fun AddItemDialog(
                                     }
                                 }
                             }
-
-                            // 常用数值快捷胶囊
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(6.5f, 7.0f, 7.5f, 8.0f, 8.5f, 9.0f).forEach { v ->
-                                    val isCur = bgInputText == v.toString()
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isCur) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                        modifier = Modifier.clickable { bgInputText = v.toString() }
-                                    ) {
-                                        Text(
-                                            text = "$v",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCur) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
 
@@ -569,26 +542,24 @@ fun AddItemDialog(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
+                        }
+                    }
 
-                            // 快速点选食物标签
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("鸡蛋", "牛奶", "燕麦", "米饭", "全麦面包", "面条", "蔬菜", "鸡胸肉", "鱼肉").forEach { food ->
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                        modifier = Modifier.clickable {
-                                            dietInputText = if (dietInputText.isBlank()) food else "$dietInputText、$food"
-                                        }
-                                    ) {
-                                        Text(
-                                            text = "+ $food",
-                                            fontSize = 11.5.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
-                                        )
-                                    }
-                                }
-                            }
+                    ItemType.EXERCISE -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = exerciseInputText,
+                                onValueChange = { exerciseInputText = it },
+                                label = { Text("运动项目与时长") },
+                                placeholder = { Text("例: 散步30分钟、慢跑20分钟") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TealPrimary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
 
@@ -670,7 +641,7 @@ fun AddItemDialog(
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(if (isSel) TealPrimary else Color.Transparent)
                                                 .clickable { medTimingChoice = timing }
-                                                .padding(horizontal = 8.dp, vertical = 10.dp)
+                                            .padding(horizontal = 8.dp, vertical = 10.dp)
                                         ) {
                                             Text(
                                                 text = timing,
@@ -679,26 +650,6 @@ fun AddItemDialog(
                                                 color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                    }
-                                }
-                            }
-
-                            // 常用剂量微调
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(4f, 6f, 8f, 10f, 12f, 14f).forEach { d ->
-                                    val isCur = medDoseInputText == d.toInt().toString()
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isCur) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                        modifier = Modifier.clickable { medDoseInputText = d.toInt().toString() }
-                                    ) {
-                                        Text(
-                                            text = "${d.toInt()}$unit",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCur) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                        )
                                     }
                                 }
                             }

@@ -11,7 +11,7 @@ data class InsulinRecord(
     @PrimaryKey
     val date: String, // Format: YYYY-MM-DD
 
-    // 晨间：空腹、餐前、餐后；药名、用药量、用药时机；餐食
+    // 晨间：空腹、餐前、餐后；药名、用药量、用药时机；餐食；运动
     val fastingBG: Float? = null,
     val preBfBG: Float? = null,
     val postBfBG: Float? = null,
@@ -20,8 +20,9 @@ data class InsulinRecord(
     val bfInsulin: Float? = null,
     val bfMedTiming: String = "餐前",
     val bfDiet: String = "",
+    val bfExercise: String = "",
 
-    // 午间：餐前、餐后；药名、用药量、用药时机；餐食
+    // 午间：餐前、餐后；药名、用药量、用药时机；餐食；运动
     val preLunchBG: Float? = null,
     val postLunchBG: Float? = null,
     val postLunchBGExtra: String = "",
@@ -29,8 +30,9 @@ data class InsulinRecord(
     val lunchInsulin: Float? = null,
     val lunchMedTiming: String = "餐前",
     val lunchDiet: String = "",
+    val lunchExercise: String = "",
 
-    // 傍晚：餐前、餐后；药名、用药量、用药时机；餐食
+    // 傍晚：餐前、餐后；药名、用药量、用药时机；餐食；运动
     val preDinnerBG: Float? = null,
     val postDinnerBG: Float? = null,
     val postDinnerBGExtra: String = "",
@@ -38,8 +40,9 @@ data class InsulinRecord(
     val dinnerInsulin: Float? = null,
     val dinnerMedTiming: String = "餐前",
     val dinnerDiet: String = "",
+    val dinnerExercise: String = "",
 
-    // 夜晚：餐前、餐后；药名、用药量、用药时机；餐食
+    // 夜晚：餐前、餐后；药名、用药量、用药时机；餐食；运动
     val preNightBG: Float? = null,
     val postNightBG: Float? = null,
     val postNightBGExtra: String = "",
@@ -47,20 +50,21 @@ data class InsulinRecord(
     val bedtimeInsulin: Float? = null,
     val nightMedTiming: String = "餐前",
     val nightDiet: String = "",
+    val nightExercise: String = "",
 
     val notes: String = ""
 ) {
     val hasMorningData: Boolean
-        get() = fastingBG != null || preBfBG != null || postBfBG != null || postBfBGExtra.isNotBlank() || bfInsulin != null || bfDiet.isNotBlank()
+        get() = fastingBG != null || preBfBG != null || postBfBG != null || postBfBGExtra.isNotBlank() || bfInsulin != null || bfDiet.isNotBlank() || bfExercise.isNotBlank()
 
     val hasLunchData: Boolean
-        get() = preLunchBG != null || postLunchBG != null || postLunchBGExtra.isNotBlank() || lunchInsulin != null || lunchDiet.isNotBlank()
+        get() = preLunchBG != null || postLunchBG != null || postLunchBGExtra.isNotBlank() || lunchInsulin != null || lunchDiet.isNotBlank() || lunchExercise.isNotBlank()
 
     val hasDinnerData: Boolean
-        get() = preDinnerBG != null || postDinnerBG != null || postDinnerBGExtra.isNotBlank() || dinnerInsulin != null || dinnerDiet.isNotBlank()
+        get() = preDinnerBG != null || postDinnerBG != null || postDinnerBGExtra.isNotBlank() || dinnerInsulin != null || dinnerDiet.isNotBlank() || dinnerExercise.isNotBlank()
 
     val hasNightData: Boolean
-        get() = preNightBG != null || postNightBG != null || postNightBGExtra.isNotBlank() || bedtimeInsulin != null || nightDiet.isNotBlank()
+        get() = preNightBG != null || postNightBG != null || postNightBGExtra.isNotBlank() || bedtimeInsulin != null || nightDiet.isNotBlank() || nightExercise.isNotBlank()
 
     /**
      * 获取指定餐段的所有餐后血糖记录（包含首个及后续多次增加的记录）
@@ -85,7 +89,7 @@ data class InsulinRecord(
                 return parsed
             }
         }
-        return if (primary != null) listOf(PostMealEntry(primary, "", "餐后")) else emptyList()
+        return if (primary != null) listOf(PostMealEntry(primary, "", "餐后2小时")) else emptyList()
     }
 
     /**

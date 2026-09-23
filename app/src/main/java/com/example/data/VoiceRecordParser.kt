@@ -23,42 +23,50 @@ data class ParsedVoiceRecord(
     val fastingBG: Float? = null,
     val preBfBG: Float? = null,
     val postBfBG: Float? = null,
+    val bfPostTag: String = "餐后2小时",
     val bfMedName: String? = null,
     val bfInsulin: Float? = null,
     val bfMedTiming: String? = null,
     val bfDiet: String? = null,
+    val bfExercise: String? = null,
 
     // 午间 / 午餐
     val preLunchBG: Float? = null,
     val postLunchBG: Float? = null,
+    val lunchPostTag: String = "餐后2小时",
     val lunchMedName: String? = null,
     val lunchInsulin: Float? = null,
     val lunchMedTiming: String? = null,
     val lunchDiet: String? = null,
+    val lunchExercise: String? = null,
 
     // 傍晚 / 晚餐
     val preDinnerBG: Float? = null,
     val postDinnerBG: Float? = null,
+    val dinnerPostTag: String = "餐后2小时",
     val dinnerMedName: String? = null,
     val dinnerInsulin: Float? = null,
     val dinnerMedTiming: String? = null,
     val dinnerDiet: String? = null,
+    val dinnerExercise: String? = null,
 
     // 睡前
     val preNightBG: Float? = null,
     val postNightBG: Float? = null,
+    val nightPostTag: String = "餐后2小时",
     val nightMedName: String? = null,
     val bedtimeInsulin: Float? = null,
     val nightMedTiming: String? = null,
     val nightDiet: String? = null,
+    val nightExercise: String? = null,
 
     val notes: String? = null
 ) {
     fun hasAnyData(): Boolean =
-        fastingBG != null || preBfBG != null || postBfBG != null || bfInsulin != null || !bfDiet.isNullOrBlank() ||
-        preLunchBG != null || postLunchBG != null || lunchInsulin != null || !lunchDiet.isNullOrBlank() ||
-        preDinnerBG != null || postDinnerBG != null || dinnerInsulin != null || !dinnerDiet.isNullOrBlank() ||
-        preNightBG != null || postNightBG != null || bedtimeInsulin != null || !nightDiet.isNullOrBlank() ||
+        fastingBG != null || preBfBG != null || postBfBG != null || bfInsulin != null || !bfDiet.isNullOrBlank() || !bfExercise.isNullOrBlank() ||
+        preLunchBG != null || postLunchBG != null || lunchInsulin != null || !lunchDiet.isNullOrBlank() || !lunchExercise.isNullOrBlank() ||
+        preDinnerBG != null || postDinnerBG != null || dinnerInsulin != null || !dinnerDiet.isNullOrBlank() || !dinnerExercise.isNullOrBlank() ||
+        preNightBG != null || postNightBG != null || bedtimeInsulin != null || !nightDiet.isNullOrBlank() || !nightExercise.isNullOrBlank() ||
         !notes.isNullOrBlank()
 
     fun getRecognizedItems(): List<RecognizedItem> {
@@ -78,10 +86,14 @@ data class ParsedVoiceRecord(
             items.add(RecognizedItem(MealPeriod.MORNING, "早餐", "早餐用药", "$med ${bfInsulin.formatDose()}$unit$timing", "💉"))
         }
         if (postBfBG != null) {
-            items.add(RecognizedItem(MealPeriod.MORNING, "早餐", "早餐后血糖", "${postBfBG} mmol/L", "🩸"))
+            val tagText = if (bfPostTag.isNotBlank()) bfPostTag else "餐后2小时"
+            items.add(RecognizedItem(MealPeriod.MORNING, "早餐", "早餐$tagText", "${postBfBG} mmol/L", "🩸"))
         }
         if (!bfDiet.isNullOrBlank()) {
             items.add(RecognizedItem(MealPeriod.MORNING, "早餐", "早餐饮食", bfDiet, "🥗"))
+        }
+        if (!bfExercise.isNullOrBlank()) {
+            items.add(RecognizedItem(MealPeriod.MORNING, "早餐", "早间运动", bfExercise, "🏃"))
         }
 
         // 午餐段
@@ -95,10 +107,14 @@ data class ParsedVoiceRecord(
             items.add(RecognizedItem(MealPeriod.LUNCH, "午餐", "午餐用药", "$med ${lunchInsulin.formatDose()}$unit$timing", "💉"))
         }
         if (postLunchBG != null) {
-            items.add(RecognizedItem(MealPeriod.LUNCH, "午餐", "午餐后血糖", "${postLunchBG} mmol/L", "🩸"))
+            val tagText = if (lunchPostTag.isNotBlank()) lunchPostTag else "餐后2小时"
+            items.add(RecognizedItem(MealPeriod.LUNCH, "午餐", "午餐$tagText", "${postLunchBG} mmol/L", "🩸"))
         }
         if (!lunchDiet.isNullOrBlank()) {
             items.add(RecognizedItem(MealPeriod.LUNCH, "午餐", "午餐饮食", lunchDiet, "🍱"))
+        }
+        if (!lunchExercise.isNullOrBlank()) {
+            items.add(RecognizedItem(MealPeriod.LUNCH, "午餐", "午间运动", lunchExercise, "🏃"))
         }
 
         // 晚餐段
@@ -112,10 +128,14 @@ data class ParsedVoiceRecord(
             items.add(RecognizedItem(MealPeriod.DINNER, "晚餐", "晚餐用药", "$med ${dinnerInsulin.formatDose()}$unit$timing", "💉"))
         }
         if (postDinnerBG != null) {
-            items.add(RecognizedItem(MealPeriod.DINNER, "晚餐", "晚餐后血糖", "${postDinnerBG} mmol/L", "🩸"))
+            val tagText = if (dinnerPostTag.isNotBlank()) dinnerPostTag else "餐后2小时"
+            items.add(RecognizedItem(MealPeriod.DINNER, "晚餐", "晚餐$tagText", "${postDinnerBG} mmol/L", "🩸"))
         }
         if (!dinnerDiet.isNullOrBlank()) {
             items.add(RecognizedItem(MealPeriod.DINNER, "晚餐", "晚餐饮食", dinnerDiet, "🍲"))
+        }
+        if (!dinnerExercise.isNullOrBlank()) {
+            items.add(RecognizedItem(MealPeriod.DINNER, "晚餐", "晚间运动", dinnerExercise, "🏃"))
         }
 
         // 睡前段
@@ -129,10 +149,14 @@ data class ParsedVoiceRecord(
             items.add(RecognizedItem(MealPeriod.NIGHT, "睡前", "睡前用药", "$med ${bedtimeInsulin.formatDose()}$unit$timing", "🛌"))
         }
         if (postNightBG != null) {
-            items.add(RecognizedItem(MealPeriod.NIGHT, "睡前", "夜间血糖", "${postNightBG} mmol/L", "🩸"))
+            val tagText = if (nightPostTag.isNotBlank()) nightPostTag else "餐后2小时"
+            items.add(RecognizedItem(MealPeriod.NIGHT, "睡前", "夜间$tagText", "${postNightBG} mmol/L", "🩸"))
         }
         if (!nightDiet.isNullOrBlank()) {
             items.add(RecognizedItem(MealPeriod.NIGHT, "睡前", "睡前加餐", nightDiet, "🥛"))
+        }
+        if (!nightExercise.isNullOrBlank()) {
+            items.add(RecognizedItem(MealPeriod.NIGHT, "睡前", "睡前运动", nightExercise, "🏃"))
         }
 
         // 备注
@@ -152,36 +176,89 @@ data class ParsedVoiceRecord(
      */
     fun mergeInto(existingRecord: InsulinRecord?): InsulinRecord {
         val base = existingRecord ?: InsulinRecord(date = this.date)
+
+        val newBfExtra = if (this.postBfBG != null) {
+            val tag = if (this.bfPostTag.isNotBlank()) this.bfPostTag else "餐后2小时"
+            val list = base.getPostMealList(MealPeriod.MORNING).toMutableList()
+            if (list.isEmpty()) {
+                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postBfBG, "", tag)))
+            } else {
+                list[0] = list[0].copy(value = this.postBfBG, tag = tag)
+                PostMealUtils.serializeEntries(list)
+            }
+        } else base.postBfBGExtra
+
+        val newLunchExtra = if (this.postLunchBG != null) {
+            val tag = if (this.lunchPostTag.isNotBlank()) this.lunchPostTag else "餐后2小时"
+            val list = base.getPostMealList(MealPeriod.LUNCH).toMutableList()
+            if (list.isEmpty()) {
+                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postLunchBG, "", tag)))
+            } else {
+                list[0] = list[0].copy(value = this.postLunchBG, tag = tag)
+                PostMealUtils.serializeEntries(list)
+            }
+        } else base.postLunchBGExtra
+
+        val newDinnerExtra = if (this.postDinnerBG != null) {
+            val tag = if (this.dinnerPostTag.isNotBlank()) this.dinnerPostTag else "餐后2小时"
+            val list = base.getPostMealList(MealPeriod.DINNER).toMutableList()
+            if (list.isEmpty()) {
+                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postDinnerBG, "", tag)))
+            } else {
+                list[0] = list[0].copy(value = this.postDinnerBG, tag = tag)
+                PostMealUtils.serializeEntries(list)
+            }
+        } else base.postDinnerBGExtra
+
+        val newNightExtra = if (this.postNightBG != null) {
+            val tag = if (this.nightPostTag.isNotBlank()) this.nightPostTag else "餐后2小时"
+            val list = base.getPostMealList(MealPeriod.NIGHT).toMutableList()
+            if (list.isEmpty()) {
+                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postNightBG, "", tag)))
+            } else {
+                list[0] = list[0].copy(value = this.postNightBG, tag = tag)
+                PostMealUtils.serializeEntries(list)
+            }
+        } else base.postNightBGExtra
+
         return base.copy(
             date = this.date,
             fastingBG = this.fastingBG ?: base.fastingBG,
             preBfBG = this.preBfBG ?: base.preBfBG,
             postBfBG = this.postBfBG ?: base.postBfBG,
+            postBfBGExtra = newBfExtra,
             bfMedName = this.bfMedName ?: base.bfMedName,
             bfInsulin = this.bfInsulin ?: base.bfInsulin,
             bfMedTiming = this.bfMedTiming ?: base.bfMedTiming,
             bfDiet = if (!this.bfDiet.isNullOrBlank()) this.bfDiet else base.bfDiet,
+            bfExercise = if (!this.bfExercise.isNullOrBlank()) this.bfExercise else base.bfExercise,
 
             preLunchBG = this.preLunchBG ?: base.preLunchBG,
             postLunchBG = this.postLunchBG ?: base.postLunchBG,
+            postLunchBGExtra = newLunchExtra,
             lunchMedName = this.lunchMedName ?: base.lunchMedName,
             lunchInsulin = this.lunchInsulin ?: base.lunchInsulin,
             lunchMedTiming = this.lunchMedTiming ?: base.lunchMedTiming,
             lunchDiet = if (!this.lunchDiet.isNullOrBlank()) this.lunchDiet else base.lunchDiet,
+            lunchExercise = if (!this.lunchExercise.isNullOrBlank()) this.lunchExercise else base.lunchExercise,
 
             preDinnerBG = this.preDinnerBG ?: base.preDinnerBG,
             postDinnerBG = this.postDinnerBG ?: base.postDinnerBG,
+            postDinnerBGExtra = newDinnerExtra,
             dinnerMedName = this.dinnerMedName ?: base.dinnerMedName,
             dinnerInsulin = this.dinnerInsulin ?: base.dinnerInsulin,
             dinnerMedTiming = this.dinnerMedTiming ?: base.dinnerMedTiming,
             dinnerDiet = if (!this.dinnerDiet.isNullOrBlank()) this.dinnerDiet else base.dinnerDiet,
+            dinnerExercise = if (!this.dinnerExercise.isNullOrBlank()) this.dinnerExercise else base.dinnerExercise,
 
             preNightBG = this.preNightBG ?: base.preNightBG,
             postNightBG = this.postNightBG ?: base.postNightBG,
+            postNightBGExtra = newNightExtra,
             nightMedName = this.nightMedName ?: base.nightMedName,
             bedtimeInsulin = this.bedtimeInsulin ?: base.bedtimeInsulin,
             nightMedTiming = this.nightMedTiming ?: base.nightMedTiming,
             nightDiet = if (!this.nightDiet.isNullOrBlank()) this.nightDiet else base.nightDiet,
+            nightExercise = if (!this.nightExercise.isNullOrBlank()) this.nightExercise else base.nightExercise,
 
             notes = if (!this.notes.isNullOrBlank()) {
                 if (base.notes.isBlank()) this.notes else "${base.notes}；${this.notes}"
@@ -215,31 +292,39 @@ object VoiceRecordParser {
         var fastingBG: Float? = null
         var preBfBG: Float? = null
         var postBfBG: Float? = null
+        var bfPostTag: String = "餐后2小时"
         var bfMedName: String? = null
         var bfInsulin: Float? = null
         var bfMedTiming: String? = null
         var bfDiet: String? = null
+        var bfExercise: String? = null
 
         var preLunchBG: Float? = null
         var postLunchBG: Float? = null
+        var lunchPostTag: String = "餐后2小时"
         var lunchMedName: String? = null
         var lunchInsulin: Float? = null
         var lunchMedTiming: String? = null
         var lunchDiet: String? = null
+        var lunchExercise: String? = null
 
         var preDinnerBG: Float? = null
         var postDinnerBG: Float? = null
+        var dinnerPostTag: String = "餐后2小时"
         var dinnerMedName: String? = null
         var dinnerInsulin: Float? = null
         var dinnerMedTiming: String? = null
         var dinnerDiet: String? = null
+        var dinnerExercise: String? = null
 
         var preNightBG: Float? = null
         var postNightBG: Float? = null
+        var nightPostTag: String = "餐后2小时"
         var nightMedName: String? = null
         var bedtimeInsulin: Float? = null
         var nightMedTiming: String? = null
         var nightDiet: String? = null
+        var nightExercise: String? = null
 
         var notes: String? = null
 
@@ -262,58 +347,87 @@ object VoiceRecordParser {
             val medResult = extractMedication(text, period)
             // 提取饮食
             val diet = extractDiet(text, period)
+            // 提取运动
+            val exercise = extractExercise(text, period)
+            // 提取餐后标签（若未指明多少小时，默认餐后2小时）
+            val postTag = extractPostMealTag(text)
 
             when (period) {
                 MealPeriod.MORNING -> {
                     if (bgMap["fasting"] != null) fastingBG = bgMap["fasting"]
                     if (bgMap["pre"] != null) preBfBG = bgMap["pre"]
-                    if (bgMap["post"] != null) postBfBG = bgMap["post"]
+                    if (bgMap["post"] != null) {
+                        postBfBG = bgMap["post"]
+                        bfPostTag = postTag
+                    }
                     if (medResult != null) {
                         if (medResult.dose != null) bfInsulin = medResult.dose
                         if (medResult.name != null) bfMedName = medResult.name
                         if (medResult.timing != null) bfMedTiming = medResult.timing
                     }
                     if (!diet.isNullOrBlank()) bfDiet = diet
+                    if (!exercise.isNullOrBlank()) bfExercise = exercise
                 }
                 MealPeriod.LUNCH -> {
                     if (bgMap["pre"] != null) preLunchBG = bgMap["pre"]
-                    if (bgMap["post"] != null) postLunchBG = bgMap["post"]
+                    if (bgMap["post"] != null) {
+                        postLunchBG = bgMap["post"]
+                        lunchPostTag = postTag
+                    }
                     if (medResult != null) {
                         if (medResult.dose != null) lunchInsulin = medResult.dose
                         if (medResult.name != null) lunchMedName = medResult.name
                         if (medResult.timing != null) lunchMedTiming = medResult.timing
                     }
                     if (!diet.isNullOrBlank()) lunchDiet = diet
+                    if (!exercise.isNullOrBlank()) lunchExercise = exercise
                 }
                 MealPeriod.DINNER -> {
                     if (bgMap["pre"] != null) preDinnerBG = bgMap["pre"]
-                    if (bgMap["post"] != null) postDinnerBG = bgMap["post"]
+                    if (bgMap["post"] != null) {
+                        postDinnerBG = bgMap["post"]
+                        dinnerPostTag = postTag
+                    }
                     if (medResult != null) {
                         if (medResult.dose != null) dinnerInsulin = medResult.dose
                         if (medResult.name != null) dinnerMedName = medResult.name
                         if (medResult.timing != null) dinnerMedTiming = medResult.timing
                     }
                     if (!diet.isNullOrBlank()) dinnerDiet = diet
+                    if (!exercise.isNullOrBlank()) dinnerExercise = exercise
                 }
                 MealPeriod.NIGHT -> {
                     if (bgMap["pre"] != null) preNightBG = bgMap["pre"]
-                    if (bgMap["post"] != null) postNightBG = bgMap["post"]
+                    if (bgMap["post"] != null) {
+                        postNightBG = bgMap["post"]
+                        nightPostTag = postTag
+                    }
                     if (medResult != null) {
                         if (medResult.dose != null) bedtimeInsulin = medResult.dose
                         if (medResult.name != null) nightMedName = medResult.name
                         if (medResult.timing != null) nightMedTiming = medResult.timing
                     }
                     if (!diet.isNullOrBlank()) nightDiet = diet
+                    if (!exercise.isNullOrBlank()) nightExercise = exercise
                 }
                 null -> {
                     // 未指定明确餐段的子句
                     if (bgMap["fasting"] != null) fastingBG = bgMap["fasting"]
                     if (bgMap["bf_pre"] != null) preBfBG = bgMap["bf_pre"]
-                    if (bgMap["bf_post"] != null) postBfBG = bgMap["bf_post"]
+                    if (bgMap["bf_post"] != null) {
+                        postBfBG = bgMap["bf_post"]
+                        bfPostTag = postTag
+                    }
                     if (bgMap["lunch_pre"] != null) preLunchBG = bgMap["lunch_pre"]
-                    if (bgMap["lunch_post"] != null) postLunchBG = bgMap["lunch_post"]
+                    if (bgMap["lunch_post"] != null) {
+                        postLunchBG = bgMap["lunch_post"]
+                        lunchPostTag = postTag
+                    }
                     if (bgMap["dinner_pre"] != null) preDinnerBG = bgMap["dinner_pre"]
-                    if (bgMap["dinner_post"] != null) postDinnerBG = bgMap["dinner_post"]
+                    if (bgMap["dinner_post"] != null) {
+                        postDinnerBG = bgMap["dinner_post"]
+                        dinnerPostTag = postTag
+                    }
                     if (bgMap["night_pre"] != null) preNightBG = bgMap["night_pre"]
 
                     // 通用血糖（未指明餐段）
@@ -322,16 +436,16 @@ object VoiceRecordParser {
                         val isPost = bgMap["generic_post"] != null
                         when (defaultPeriod) {
                             MealPeriod.MORNING -> {
-                                if (isPost) postBfBG = gVal else fastingBG = gVal
+                                if (isPost) { postBfBG = gVal; bfPostTag = postTag } else fastingBG = gVal
                             }
                             MealPeriod.LUNCH -> {
-                                if (isPost) postLunchBG = gVal else preLunchBG = gVal
+                                if (isPost) { postLunchBG = gVal; lunchPostTag = postTag } else preLunchBG = gVal
                             }
                             MealPeriod.DINNER -> {
-                                if (isPost) postDinnerBG = gVal else preDinnerBG = gVal
+                                if (isPost) { postDinnerBG = gVal; dinnerPostTag = postTag } else preDinnerBG = gVal
                             }
                             MealPeriod.NIGHT -> {
-                                preNightBG = gVal
+                                if (isPost) { postNightBG = gVal; nightPostTag = postTag } else preNightBG = gVal
                             }
                         }
                     }
@@ -372,6 +486,16 @@ object VoiceRecordParser {
                         }
                     }
 
+                    // 通用运动（未指明餐段）
+                    if (!exercise.isNullOrBlank()) {
+                        when (defaultPeriod) {
+                            MealPeriod.MORNING -> if (bfExercise.isNullOrBlank()) bfExercise = exercise
+                            MealPeriod.LUNCH -> if (lunchExercise.isNullOrBlank()) lunchExercise = exercise
+                            MealPeriod.DINNER -> if (dinnerExercise.isNullOrBlank()) dinnerExercise = exercise
+                            MealPeriod.NIGHT -> if (nightExercise.isNullOrBlank()) nightExercise = exercise
+                        }
+                    }
+
                     // 备注提取
                     val noteMatch = extractNotes(text)
                     if (!noteMatch.isNullOrBlank()) {
@@ -388,31 +512,39 @@ object VoiceRecordParser {
             fastingBG = fastingBG,
             preBfBG = preBfBG,
             postBfBG = postBfBG,
+            bfPostTag = bfPostTag,
             bfMedName = bfMedName,
             bfInsulin = bfInsulin,
             bfMedTiming = bfMedTiming,
             bfDiet = bfDiet,
+            bfExercise = bfExercise,
 
             preLunchBG = preLunchBG,
             postLunchBG = postLunchBG,
+            lunchPostTag = lunchPostTag,
             lunchMedName = lunchMedName,
             lunchInsulin = lunchInsulin,
             lunchMedTiming = lunchMedTiming,
             lunchDiet = lunchDiet,
+            lunchExercise = lunchExercise,
 
             preDinnerBG = preDinnerBG,
             postDinnerBG = postDinnerBG,
+            dinnerPostTag = dinnerPostTag,
             dinnerMedName = dinnerMedName,
             dinnerInsulin = dinnerInsulin,
             dinnerMedTiming = dinnerMedTiming,
             dinnerDiet = dinnerDiet,
+            dinnerExercise = dinnerExercise,
 
             preNightBG = preNightBG,
             postNightBG = postNightBG,
+            nightPostTag = nightPostTag,
             nightMedName = nightMedName,
             bedtimeInsulin = bedtimeInsulin,
             nightMedTiming = nightMedTiming,
             nightDiet = nightDiet,
+            nightExercise = nightExercise,
 
             notes = notes
         )
@@ -616,7 +748,7 @@ object VoiceRecordParser {
         }
 
         // 3. 餐后 / 饭后血糖
-        val postPat = Pattern.compile("""(?:餐后(?:2h|2小时|两小时)?|饭后(?:2h|2小时|两小时)?)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""")
+        val postPat = Pattern.compile("""(?:餐后(?:[123一二两]小时|[123]h)?|饭后(?:[123一二两]小时|[123]h)?|加餐后)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
         val mPost = postPat.matcher(text)
         if (mPost.find()) {
             if (isValidBGNumber(mPost.end(1))) {
@@ -636,12 +768,13 @@ object VoiceRecordParser {
         // 5. 跨餐段的明确修饰
         val specificPatterns = mapOf(
             "bf_pre" to Pattern.compile("""(?:早[餐饭]前|早餐餐前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "bf_post" to Pattern.compile("""(?:早[餐饭]后|早餐餐后)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
+            "bf_post" to Pattern.compile("""(?:早[餐饭]后|早餐餐后)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
             "lunch_pre" to Pattern.compile("""(?:午[餐饭]前|中午餐前|中饭前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "lunch_post" to Pattern.compile("""(?:午[餐饭]后|中午餐后|中饭后)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
+            "lunch_post" to Pattern.compile("""(?:午[餐饭]后|中午餐后|中饭后)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
             "dinner_pre" to Pattern.compile("""(?:晚[餐饭]前|晚餐餐前|晚上餐前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "dinner_post" to Pattern.compile("""(?:晚[餐饭]后|晚餐餐后|晚上餐后)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "night_pre" to Pattern.compile("""(?:睡前|夜间)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""")
+            "dinner_post" to Pattern.compile("""(?:晚[餐饭]后|晚餐餐后|晚上餐后)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "night_pre" to Pattern.compile("""(?:睡前|夜间)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
+            "night_post" to Pattern.compile("""(?:睡前|夜间)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
         )
 
         for ((key, pat) in specificPatterns) {
@@ -680,6 +813,35 @@ object VoiceRecordParser {
         }
 
         return result
+    }
+
+    private fun extractPostMealTag(subText: String): String {
+        return when {
+            subText.contains("1小时") || subText.contains("一小时") || subText.contains("1h", ignoreCase = true) -> "餐后1小时"
+            subText.contains("3小时") || subText.contains("三小时") || subText.contains("3h", ignoreCase = true) -> "餐后3小时"
+            subText.contains("加餐") -> "加餐后"
+            else -> "餐后2小时" // 语音识别若未特别指明餐后多少小时，一律默认为餐后两小时
+        }
+    }
+
+    private fun extractExercise(text: String, period: MealPeriod?): String? {
+        if (text.isBlank()) return null
+        val exercisePatterns = listOf(
+            Pattern.compile("""(?:去|进行了|做了|完成了)?\s*(散步|慢跑|快走|跑步|游泳|骑车|骑行|打太极|太极拳|瑜伽|健身|八段锦|跳操|跳绳|运动|活动|锻炼)\s*(\d+(?:小时|分钟|个半小时)?|半小时|一小时)?"""),
+            Pattern.compile("""(?:运动|锻炼|活动|走|跑)(?:了)?\s*(\d+(?:小时|分钟|个半小时)?|半小时|一小时)""")
+        )
+        for (pat in exercisePatterns) {
+            val m = pat.matcher(text)
+            if (m.find()) {
+                val p1 = m.group(1) ?: ""
+                val p2 = if (m.groupCount() >= 2) (m.group(2) ?: "") else ""
+                val res = (p1 + p2).trim()
+                if (res.length >= 2 && !res.contains("血糖") && !res.contains("胰岛素")) {
+                    return res
+                }
+            }
+        }
+        return null
     }
 
     private fun extractDiet(text: String, period: MealPeriod?): String? {

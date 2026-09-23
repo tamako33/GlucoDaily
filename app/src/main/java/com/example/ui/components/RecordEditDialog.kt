@@ -245,6 +245,9 @@ fun RecordEditDialog(
     var bfDiet by remember(currentRecordForDate) {
         mutableStateOf(currentRecordForDate?.bfDiet ?: "")
     }
+    var bfExercise by remember(currentRecordForDate) {
+        mutableStateOf(currentRecordForDate?.bfExercise ?: "")
+    }
 
     // 午间数据状态
     var preLunchBG by remember(currentRecordForDate) {
@@ -264,6 +267,9 @@ fun RecordEditDialog(
     }
     var lunchDiet by remember(currentRecordForDate) {
         mutableStateOf(currentRecordForDate?.lunchDiet ?: "")
+    }
+    var lunchExercise by remember(currentRecordForDate) {
+        mutableStateOf(currentRecordForDate?.lunchExercise ?: "")
     }
 
     // 傍晚数据状态
@@ -285,6 +291,9 @@ fun RecordEditDialog(
     var dinnerDiet by remember(currentRecordForDate) {
         mutableStateOf(currentRecordForDate?.dinnerDiet ?: "")
     }
+    var dinnerExercise by remember(currentRecordForDate) {
+        mutableStateOf(currentRecordForDate?.dinnerExercise ?: "")
+    }
 
     // 夜晚数据状态
     var preNightBG by remember(currentRecordForDate) {
@@ -304,6 +313,9 @@ fun RecordEditDialog(
     }
     var nightDiet by remember(currentRecordForDate) {
         mutableStateOf(currentRecordForDate?.nightDiet ?: "")
+    }
+    var nightExercise by remember(currentRecordForDate) {
+        mutableStateOf(currentRecordForDate?.nightExercise ?: "")
     }
 
     var notes by remember(currentRecordForDate) {
@@ -1209,6 +1221,51 @@ fun RecordEditDialog(
                                         }
                                     }
                                 }
+
+                                // 第四行：运动记录
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = "运动记录",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    when (selectedPeriod) {
+                                        MealPeriod.MORNING -> {
+                                            DietInputField(
+                                                value = bfExercise,
+                                                onValueChange = { bfExercise = it },
+                                                placeholder = "例：晨练散步30分钟、慢跑...",
+                                                onFocusWithCoordinates = onFieldFocus
+                                            )
+                                        }
+                                        MealPeriod.LUNCH -> {
+                                            DietInputField(
+                                                value = lunchExercise,
+                                                onValueChange = { lunchExercise = it },
+                                                placeholder = "例：午后散步20分钟...",
+                                                onFocusWithCoordinates = onFieldFocus
+                                            )
+                                        }
+                                        MealPeriod.DINNER -> {
+                                            DietInputField(
+                                                value = dinnerExercise,
+                                                onValueChange = { dinnerExercise = it },
+                                                placeholder = "例：傍晚快走40分钟、瑜伽...",
+                                                onFocusWithCoordinates = onFieldFocus
+                                            )
+                                        }
+                                        MealPeriod.NIGHT -> {
+                                            DietInputField(
+                                                value = nightExercise,
+                                                onValueChange = { nightExercise = it },
+                                                placeholder = "例：室内拉伸15分钟...",
+                                                onFocusWithCoordinates = onFieldFocus
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             // 4. 全天可选备注
@@ -1289,6 +1346,7 @@ fun RecordEditDialog(
                                                 bfInsulin = bfInsulin.toFloatOrNull(),
                                                 bfMedTiming = bfMedTiming.trim().ifBlank { "餐前" },
                                                 bfDiet = bfDiet.trim(),
+                                                bfExercise = bfExercise.trim(),
                                                 notes = notes.trim()
                                             )
                                             MealPeriod.LUNCH -> base.copy(
@@ -1299,6 +1357,7 @@ fun RecordEditDialog(
                                                 lunchInsulin = lunchInsulin.toFloatOrNull(),
                                                 lunchMedTiming = lunchMedTiming.trim().ifBlank { "餐前" },
                                                 lunchDiet = lunchDiet.trim(),
+                                                lunchExercise = lunchExercise.trim(),
                                                 notes = notes.trim()
                                             )
                                             MealPeriod.DINNER -> base.copy(
@@ -1309,6 +1368,7 @@ fun RecordEditDialog(
                                                 dinnerInsulin = dinnerInsulin.toFloatOrNull(),
                                                 dinnerMedTiming = dinnerMedTiming.trim().ifBlank { "餐前" },
                                                 dinnerDiet = dinnerDiet.trim(),
+                                                dinnerExercise = dinnerExercise.trim(),
                                                 notes = notes.trim()
                                             )
                                             MealPeriod.NIGHT -> base.copy(
@@ -1319,6 +1379,7 @@ fun RecordEditDialog(
                                                 bedtimeInsulin = bedtimeInsulin.toFloatOrNull(),
                                                 nightMedTiming = nightMedTiming.trim().ifBlank { "餐前" },
                                                 nightDiet = nightDiet.trim(),
+                                                nightExercise = nightExercise.trim(),
                                                 notes = notes.trim()
                                             )
                                         }

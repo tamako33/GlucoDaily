@@ -289,6 +289,13 @@ fun RecordCard(
                             MealPeriod.NIGHT -> record.nightDiet
                         }
 
+                        val exerciseText = when (period) {
+                            MealPeriod.MORNING -> record.bfExercise
+                            MealPeriod.LUNCH -> record.lunchExercise
+                            MealPeriod.DINNER -> record.dinnerExercise
+                            MealPeriod.NIGHT -> record.nightExercise
+                        }
+
                         val themeColor = when (period) {
                             MealPeriod.MORNING -> AppThemeColors.breakfastColor
                             MealPeriod.LUNCH -> AppThemeColors.lunchColor
@@ -306,6 +313,7 @@ fun RecordCard(
                             medDose = medDose,
                             medTiming = medTiming,
                             dietText = dietText,
+                            exerciseText = exerciseText,
                             postMealList = record.getPostMealList(period),
                             themeColor = themeColor,
                             prevNightInfo = if (period == MealPeriod.MORNING) prevNightInfo else null,
@@ -398,6 +406,7 @@ private fun TimelinePeriodSection(
     medDose: Float?,
     medTiming: String,
     dietText: String,
+    exerciseText: String,
     postMealList: List<PostMealEntry>,
     themeColor: Color,
     prevNightInfo: PrevNightInfo? = null,
@@ -447,7 +456,7 @@ private fun TimelinePeriodSection(
             modifier = Modifier
                 .weight(1f)
                 .padding(bottom = if (isLast) 2.dp else 10.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // 1. 时段标题行
             Row(
@@ -551,7 +560,12 @@ private fun TimelinePeriodSection(
                 TimelineItemDietRow(dietText = dietText)
             }
 
-            // 4) 餐后血糖（支持多条，每条为独立条目）
+            // 4) 运动记录
+            if (exerciseText.isNotBlank()) {
+                TimelineItemExerciseRow(exerciseText = exerciseText)
+            }
+
+            // 5) 餐后血糖（支持多条，每条为独立条目）
             postMealList.forEachIndexed { idx, entry ->
                 TimelineItemPostBGRow(
                     entry = entry,
@@ -563,7 +577,10 @@ private fun TimelinePeriodSection(
 }
 
 /**
- * 纵向时间轴条目：餐前/空腹血糖（无大边框，独立微轻卡）
+ * 纵向时间轴条目：餐前/空腹血糖
+ * - 老年友好大字号（数值 21sp Bold）
+ * - 偏高/达标/偏低状态标签居左
+ * - 数值与单位齐右
  */
 @Composable
 private fun TimelineItemPreBGRow(
@@ -581,39 +598,29 @@ private fun TimelineItemPreBGRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 11.dp, vertical = 7.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 左侧：图标 + 标题
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(text = "🩸", fontSize = 13.sp)
+                Text(text = "🩸", fontSize = 16.sp)
                 Text(
                     text = label,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
+            // 右侧：标签居左，数值居右对齐
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(
-                    text = String.format(Locale.US, "%.1f", value),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.SansSerif,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "mmol/L",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
-                )
                 if (status != null) {
                     val (bg, fg) = when (status.level) {
                         BGLevel.NORMAL -> (if (AppThemeColors.isDark) Color(0xFF064E3B).copy(alpha = 0.45f) else Color(0xFFECFDF5)) to Color(0xFF059669)
@@ -622,17 +629,37 @@ private fun TimelineItemPreBGRow(
                     }
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(5.dp))
                             .background(bg)
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = status.label,
-                            fontSize = 9.5.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = fg
                         )
                     }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "%.1f", value),
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.SansSerif,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "mmol/L",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
                 }
             }
         }
@@ -640,7 +667,10 @@ private fun TimelineItemPreBGRow(
 }
 
 /**
- * 纵向时间轴条目：用药记录（无大边框，独立微轻卡）
+ * 纵向时间轴条目：用药记录
+ * - 老年友好大字号（剂量 21sp Bold）
+ * - 餐前/睡前时机标签在数字左边
+ * - 剂量数值与单位齐右
  */
 @Composable
 private fun TimelineItemMedicationRow(
@@ -659,52 +689,65 @@ private fun TimelineItemMedicationRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 11.dp, vertical = 7.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 左侧：图标 + 药名
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(text = "💊", fontSize = 13.sp)
+                Text(text = "💊", fontSize = 16.sp)
                 Text(
                     text = displayMed,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
+            // 右侧：时机标签在左，剂量数字齐右
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(
-                    text = if (dose % 1f == 0f) "${dose.toInt()}" else "$dose",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TealPrimary
-                )
-                Text(
-                    text = unit,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TealPrimary
-                )
                 if (timing.isNotBlank()) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(
+                                if (AppThemeColors.isDark) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = timing,
-                            fontSize = 9.5.sp,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = if (dose % 1f == 0f) "${dose.toInt()}" else "$dose",
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TealPrimary
+                    )
+                    Text(
+                        text = unit,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TealPrimary,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
                 }
             }
         }
@@ -712,7 +755,7 @@ private fun TimelineItemMedicationRow(
 }
 
 /**
- * 纵向时间轴条目：用餐情况（无大边框，独立微轻卡）
+ * 纵向时间轴条目：用餐情况
  */
 @Composable
 private fun TimelineItemDietRow(dietText: String) {
@@ -724,23 +767,55 @@ private fun TimelineItemDietRow(dietText: String) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 11.dp, vertical = 7.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "🍽️", fontSize = 13.sp)
-            Spacer(modifier = Modifier.width(6.dp))
+            Text(text = "🍽️", fontSize = 16.sp)
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = dietText,
-                fontSize = 12.5.sp,
+                fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 16.sp
+                lineHeight = 18.sp
             )
         }
     }
 }
 
 /**
- * 纵向时间轴条目：单笔餐后血糖（无大边框，独立微轻卡）
+ * 纵向时间轴条目：运动记录
+ */
+@Composable
+private fun TimelineItemExerciseRow(exerciseText: String) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (AppThemeColors.isDark) 0.35f else 0.42f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "🏃", fontSize = 16.sp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = exerciseText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+/**
+ * 纵向时间轴条目：单笔餐后血糖
+ * - 老年友好大字号（数值 21sp Bold）
+ * - 偏高/达标/偏低状态标签居左
+ * - 数值与单位齐右
  */
 @Composable
 private fun TimelineItemPostBGRow(
@@ -757,46 +832,36 @@ private fun TimelineItemPostBGRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 11.dp, vertical = 7.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 左侧：图标 + 餐后阶段标签 + 测量具体时间
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(text = "📈", fontSize = 13.sp)
+                Text(text = "📈", fontSize = 16.sp)
                 Text(
                     text = entry.tag.ifBlank { "餐后血糖" },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 if (entry.time.isNotBlank()) {
                     Text(
                         text = entry.time,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                     )
                 }
             }
 
+            // 右侧：偏高标签在左，数值在右齐右，最后带删除按钮
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(
-                    text = String.format(Locale.US, "%.1f", entry.value),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.SansSerif,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "mmol/L",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
-                )
                 if (status != null) {
                     val (bg, fg) = when (status.level) {
                         BGLevel.NORMAL -> (if (AppThemeColors.isDark) Color(0xFF064E3B).copy(alpha = 0.45f) else Color(0xFFECFDF5)) to Color(0xFF059669)
@@ -805,27 +870,48 @@ private fun TimelineItemPostBGRow(
                     }
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(5.dp))
                             .background(bg)
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = status.label,
-                            fontSize = 9.5.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = fg
                         )
                     }
                 }
+
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "%.1f", entry.value),
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.SansSerif,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "mmol/L",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                }
+
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "删除该笔餐后血糖",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(12.dp)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }

@@ -683,7 +683,7 @@ fun InsulinTrackerScreen(
                 initialItemType = state.initialItemType,
                 allRecords = allRecords,
                 onDismiss = { viewModel.dismissDialog() },
-                onSaveItem = { date, period, itemType, bgVal, dietText, medName, dose, medTiming, postMealTag, postMealTime, keepOpen ->
+                onSaveItem = { date, period, itemType, bgVal, dietText, medName, dose, medTiming, postMealTag, postMealTime, exerciseText, keepOpen ->
                     viewModel.saveSingleItem(
                         date = date,
                         period = period,
@@ -695,6 +695,7 @@ fun InsulinTrackerScreen(
                         medTiming = medTiming,
                         postMealTag = postMealTag,
                         postMealTime = postMealTime,
+                        exerciseText = exerciseText,
                         keepDialogOpen = keepOpen
                     )
                 }

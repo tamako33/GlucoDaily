@@ -53,7 +53,8 @@ enum class ItemType(val title: String, val icon: String) {
     PRE_MEAL_BG("餐前血糖", "🩸"),
     DIET("用餐情况", "🍽️"),
     MEDICATION("用药", "💊"),
-    POST_MEAL_BG("餐后血糖", "🩸")
+    POST_MEAL_BG("餐后血糖", "🩸"),
+    EXERCISE("运动记录", "🏃")
 }
 
 sealed class DialogState {
@@ -195,6 +196,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         medTiming: String = "",
         postMealTag: String = "",
         postMealTime: String = "",
+        exerciseText: String = "",
         keepDialogOpen: Boolean = false
     ) {
         viewModelScope.launch {
@@ -219,6 +221,18 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                             MealPeriod.LUNCH -> existing.copy(lunchDiet = dietText.trim())
                             MealPeriod.DINNER -> existing.copy(dinnerDiet = dietText.trim())
                             MealPeriod.NIGHT -> existing.copy(nightDiet = dietText.trim())
+                        }
+                    } else {
+                        existing
+                    }
+                }
+                ItemType.EXERCISE -> {
+                    if (exerciseText.isNotBlank()) {
+                        when (period) {
+                            MealPeriod.MORNING -> existing.copy(bfExercise = exerciseText.trim())
+                            MealPeriod.LUNCH -> existing.copy(lunchExercise = exerciseText.trim())
+                            MealPeriod.DINNER -> existing.copy(dinnerExercise = exerciseText.trim())
+                            MealPeriod.NIGHT -> existing.copy(nightExercise = exerciseText.trim())
                         }
                     } else {
                         existing
@@ -281,6 +295,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
             val typeDesc = when (itemType) {
                 ItemType.PRE_MEAL_BG -> if (period == MealPeriod.MORNING) "空腹血糖" else if (period == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖"
                 ItemType.DIET -> "用餐情况"
+                ItemType.EXERCISE -> "运动记录"
                 ItemType.MEDICATION -> "用药记录"
                 ItemType.POST_MEAL_BG -> "餐后血糖"
             }
