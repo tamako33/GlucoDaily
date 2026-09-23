@@ -253,17 +253,17 @@ fun InsulinTrackerScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                            .padding(horizontal = 4.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(26.dp)
+                                    .size(28.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
                                         Brush.linearGradient(
@@ -276,14 +276,15 @@ fun InsulinTrackerScreen(
                                     imageVector = Icons.Default.Favorite,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
 
                             Text(
                                 text = "每日胰岛血糖",
-                                fontSize = 15.sp,
+                                fontSize = 15.5.sp,
                                 fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.4.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }

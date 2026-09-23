@@ -113,7 +113,7 @@ fun TrendChart(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         LegendItem(color = AppThemeColors.breakfastColor, label = "空腹", isLine = true)
-                        LegendItem(color = AppThemeColors.lunchColor, label = "餐后", isLine = true, isDashed = true)
+                        LegendItem(color = AppThemeColors.lunchColor, label = "餐后均值", isLine = true, isDashed = true)
                         LegendItem(
                             color = if (AppThemeColors.isDark) Color(0xFF64748B) else Color(0xFF94A3B8),
                             label = "胰岛素",

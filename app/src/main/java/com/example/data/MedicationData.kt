@@ -284,3 +284,22 @@ object MedicationData {
         }
     }
 }
+
+/**
+ * 运动文本解析数据结构与统一解析工具
+ */
+data class ParsedExercise(val name: String, val duration: String?, val unit: String)
+
+fun parseExercise(text: String): ParsedExercise {
+    val trimmed = text.trim()
+    val regex = Regex("""^(.*?)\s*(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)?$""")
+    val match = regex.find(trimmed)
+    if (match != null) {
+        val name = match.groupValues[1].trim()
+        val duration = match.groupValues[2].trim()
+        val rawUnit = match.groupValues[3].trim()
+        val unit = if (rawUnit.isBlank()) "分钟" else rawUnit
+        return ParsedExercise(name = name, duration = duration, unit = unit)
+    }
+    return ParsedExercise(name = trimmed, duration = null, unit = "")
+}

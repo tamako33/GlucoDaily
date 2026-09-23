@@ -56,6 +56,7 @@ import com.example.data.MealPeriod
 import com.example.data.MedicationData
 import com.example.data.PostMealEntry
 import com.example.data.PrevNightInfo
+import com.example.data.parseExercise
 import com.example.ui.ItemType
 import com.example.ui.theme.AppThemeColors
 import com.example.ui.theme.TealPrimary
@@ -102,15 +103,15 @@ fun RecordCard(
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp, vertical = 2.dp)
         ) {
-            // 1. 卡片顶栏：全天用药总量胶囊 + 加一条快捷入口 + 编辑全天 + 删除
+            // 1. 卡片顶栏：全天用药总量胶囊
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 左侧：全天用药总量
+                // 全天用药总量
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
@@ -142,68 +143,6 @@ fun RecordCard(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = TealPrimary
-                        )
-                    }
-                }
-
-                // 右侧：快捷添加条目 + 编辑全天 + 删除
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = TealPrimary.copy(alpha = 0.14f),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null, null) }
-                            .testTag("card_quick_add_${record.date}")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "加一条",
-                                tint = TealPrimary,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = "加一条",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TealPrimary
-                            )
-                        }
-                    }
-
-                    IconButton(
-                        onClick = onEdit,
-                        modifier = Modifier
-                            .size(34.dp)
-                            .testTag("edit_button_${record.date}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "编辑记录",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier
-                            .size(34.dp)
-                            .testTag("delete_button_${record.date}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "删除记录",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -332,41 +271,6 @@ fun RecordCard(
                             onEditPeriod = { onEditPeriod?.invoke(period) ?: onEdit() },
                             onAddItem = { itemType, postMealIdx -> onAddItem?.invoke(period, itemType, postMealIdx) }
                         )
-                    }
-
-                    // 时段下方微型添加引导
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 38.dp, top = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = TealPrimary.copy(alpha = 0.1f),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null, null) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = null,
-                                    tint = TealPrimary,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Text(
-                                    text = "记录新条目",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TealPrimary
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -910,28 +814,9 @@ private fun TimelineItemDietRow(
 }
 
 /**
- * 运动文本解析数据结构与解析工具
- */
-private data class ParsedExercise(val name: String, val duration: String?, val unit: String)
-
-private fun parseExercise(text: String): ParsedExercise {
-    val trimmed = text.trim()
-    val regex = Regex("""^(.*?)\s*(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)?$""")
-    val match = regex.find(trimmed)
-    if (match != null) {
-        val name = match.groupValues[1].trim()
-        val duration = match.groupValues[2].trim()
-        val rawUnit = match.groupValues[3].trim()
-        val unit = if (rawUnit.isBlank()) "分钟" else rawUnit
-        return ParsedExercise(name = name, duration = duration, unit = unit)
-    }
-    return ParsedExercise(name = trimmed, duration = null, unit = "")
-}
-
-/**
  * 纵向时间轴条目：运动记录
- * - 左侧类目名称固定为“🏃 运动”，样式统一
- * - 右侧运动时长数字向右侧对齐，运动项目作为标签显示在数字左侧
+ * - 左侧用户手动输入的运动名称作为标题（如 🏃 散步、🏃 慢跑）
+ * - 右侧运动时长数字向右侧对齐，去除标签框
  * - 上方附一行小记录时间，长按弹出操作
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -971,72 +856,48 @@ private fun TimelineItemExerciseRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左侧：类别名字为运动
+            // 左侧：用户手动输入的运动名称作为标题（若空则回退为“运动”）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 Text(text = "🏃", fontSize = 16.sp)
                 Text(
-                    text = "运动",
+                    text = parsed.name.ifBlank { "运动" },
                     fontSize = 14.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
-            // 右侧：运动项目标签在左，运动时长数字齐右
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                if (parsed.name.isNotBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(
-                                if (AppThemeColors.isDark) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = parsed.name,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                if (parsed.duration != null) {
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            text = parsed.duration,
-                            fontSize = 21.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = parsed.unit,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(bottom = 2.dp)
-                        )
-                    }
-                } else if (parsed.name.isBlank()) {
+            // 右侧：运动时长数字齐右（已去除标签框）
+            if (parsed.duration != null) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
                     Text(
-                        text = exerciseText,
-                        fontSize = 15.sp,
+                        text = parsed.duration,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = parsed.unit,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.End
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = 2.dp)
                     )
                 }
+            } else if (parsed.name.isBlank() && exerciseText.isNotBlank()) {
+                Text(
+                    text = exerciseText,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.End
+                )
             }
         }
     }

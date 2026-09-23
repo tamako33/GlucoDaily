@@ -194,23 +194,9 @@ fun AddItemDialog(
                     MealPeriod.DINNER -> currentRecord?.dinnerExercise
                     MealPeriod.NIGHT -> currentRecord?.nightExercise
                 } ?: ""
-                val match = Regex("""^(.*?)(?:\s+|(?<=[^\d]))(\d+)\s*分钟$""").find(ex.trim())
-                if (match != null) {
-                    exerciseNameInputText = match.groupValues[1].trim()
-                    exerciseDurationInputText = match.groupValues[2].trim()
-                } else if (ex.trim().endsWith("分钟")) {
-                    val numOnly = ex.trim().removeSuffix("分钟").trim()
-                    if (numOnly.all { it.isDigit() }) {
-                        exerciseNameInputText = ""
-                        exerciseDurationInputText = numOnly
-                    } else {
-                        exerciseNameInputText = ex.trim()
-                        exerciseDurationInputText = ""
-                    }
-                } else {
-                    exerciseNameInputText = ex.trim()
-                    exerciseDurationInputText = ""
-                }
+                val parsed = com.example.data.parseExercise(ex)
+                exerciseNameInputText = parsed.name
+                exerciseDurationInputText = parsed.duration ?: ""
             }
             ItemType.MEDICATION -> {
                 val (name, dose, timing) = when (period) {
@@ -994,21 +980,12 @@ fun AddItemDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // 5. 底部操作栏（极简双按钮）
+                // 5. 底部操作栏（极简单按钮）
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(
-                        onClick = { submit(keepOpen = true) },
-                        enabled = isInputValid
-                    ) {
-                        Text("保存并再加", color = if (isInputValid) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
                     val submitButtonText = if (hasExistingData) "保存修改" else "保存条目"
                     Button(
                         onClick = { submit(keepOpen = false) },
