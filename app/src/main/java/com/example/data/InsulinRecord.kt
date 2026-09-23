@@ -408,5 +408,20 @@ object PostMealUtils {
             }
         }
     }
+
+    fun normalizeTag(tag: String): String {
+        val t = tag.trim()
+        if (t == "餐后半小时" || t == "餐后0.5h" || t == "餐后0.5小时") return "餐后半小时"
+        val hourMatch = Regex("""^餐后(\d+)(?:小时|h)$""").find(t)
+        if (hourMatch != null) {
+            return "餐后${hourMatch.groupValues[1]}h"
+        }
+        return t
+    }
+
+    fun isTagMatch(tagA: String, tagB: String): Boolean {
+        if (tagA.trim().equals(tagB.trim(), ignoreCase = true)) return true
+        return normalizeTag(tagA) == normalizeTag(tagB)
+    }
 }
 

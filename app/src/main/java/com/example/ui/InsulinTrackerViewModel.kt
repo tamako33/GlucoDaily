@@ -315,12 +315,21 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                 }
                 ItemType.POST_MEAL_BG -> {
                     val currentList = existing.getPostMealList(period).toMutableList()
-                    if (postMealIndex != null && postMealIndex in currentList.indices) {
+                    val targetIndex = if (postMealIndex != null && postMealIndex in currentList.indices) {
+                        postMealIndex
+                    } else {
+                        val foundIdx = currentList.indexOfFirst {
+                            com.example.data.PostMealUtils.isTagMatch(it.tag.ifBlank { "餐后2h" }, postMealTag)
+                        }
+                        if (foundIdx >= 0) foundIdx else null
+                    }
+
+                    if (targetIndex != null) {
                         if (bgValue != null) {
-                            currentList[postMealIndex] = com.example.data.PostMealEntry(bgValue, recordTime, postMealTag)
+                            currentList[targetIndex] = com.example.data.PostMealEntry(bgValue, recordTime, postMealTag)
                         } else {
                             wasDeleted = true
-                            currentList.removeAt(postMealIndex)
+                            currentList.removeAt(targetIndex)
                         }
                     } else {
                         if (bgValue != null) {
@@ -328,6 +337,18 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                         } else {
                             wasDeleted = true
                         }
+                    }
+                    // 按阶段时间/小时自然排序（半小时 -> 1h -> 2h -> 3h...）
+                    currentList.sortWith { a, b ->
+                        fun parseHour(tag: String): Float {
+                            if (tag.contains("半小时") || tag.contains("0.5")) return 0.5f
+                            val m = Regex("""^餐后(\d+(?:\.\d+)?)(?:小时|h)$""").find(tag.trim())
+                            if (m != null) return m.groupValues[1].toFloatOrNull() ?: 2.0f
+                            return 99f
+                        }
+                        val hA = parseHour(a.tag)
+                        val hB = parseHour(b.tag)
+                        if (hA != hB) hA.compareTo(hB) else a.time.compareTo(b.time)
                     }
                     val newPrimary = currentList.firstOrNull()?.value
                     val serializedExtras = if (currentList.isEmpty()) "" else com.example.data.PostMealUtils.serializeEntries(currentList)

@@ -103,52 +103,7 @@ fun RecordCard(
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp, vertical = 2.dp)
         ) {
-            // 1. 卡片顶栏：全天用药总量胶囊
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 全天用药总量
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (AppThemeColors.isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                            else TealPrimary.copy(alpha = 0.12f)
-                        )
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "全天用药: ",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = if (record.totalInsulin % 1.0f == 0f) {
-                                record.totalInsulin.toInt().toString()
-                            } else {
-                                String.format(Locale.US, "%.1f", record.totalInsulin)
-                            },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = FontFamily.Monospace,
-                            color = TealPrimary
-                        )
-                        Text(
-                            text = " U",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TealPrimary
-                        )
-                    }
-                }
-            }
 
-            Spacer(modifier = Modifier.height(4.dp))
 
             // 2. 纵向时间轴流 (Vertical Timeline)
             if (!hasAnyData) {

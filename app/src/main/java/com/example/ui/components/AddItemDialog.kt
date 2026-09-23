@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -29,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -53,6 +55,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -140,8 +143,9 @@ fun AddItemDialog(
     var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
     var medDoseInputText by remember { mutableStateOf("") }
     var medTimingChoice by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前") }
-    var postMealTagChoice by remember { mutableStateOf("餐后2小时") }
+    var postMealTagChoice by remember { mutableStateOf("餐后2h") }
     var postMealTimeInputText by remember { mutableStateOf(nowTimeStr) }
+    val extraDynamicPostMealTabs = remember { mutableStateListOf<String>() }
 
     var showDatePicker by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -161,21 +165,21 @@ fun AddItemDialog(
             }
             ItemType.POST_MEAL_BG -> {
                 val list = currentRecord?.getPostMealList(period) ?: emptyList()
-                val entry = if (postMealIdx != null && postMealIdx in list.indices) {
+                val targetEntry = if (postMealIdx != null && postMealIdx in list.indices) {
                     list[postMealIdx]
                 } else {
-                    list.firstOrNull()
+                    list.find { com.example.data.PostMealUtils.isTagMatch(it.tag.ifBlank { "餐后2h" }, postMealTagChoice) }
                 }
-                if (entry != null) {
-                    bgInputText = String.format(Locale.US, "%.1f", entry.value)
-                    postMealTagChoice = entry.tag.ifBlank { "餐后2小时" }
-                    postMealTimeInputText = entry.time.ifBlank { nowTimeStr }
-                    currentPostMealIndex = if (postMealIdx != null && postMealIdx in list.indices) postMealIdx else 0
+                if (targetEntry != null) {
+                    val actualIdx = list.indexOf(targetEntry)
+                    currentPostMealIndex = if (actualIdx >= 0) actualIdx else postMealIdx
+                    bgInputText = String.format(Locale.US, "%.1f", targetEntry.value)
+                    postMealTagChoice = com.example.data.PostMealUtils.normalizeTag(targetEntry.tag.ifBlank { "餐后2h" })
+                    postMealTimeInputText = targetEntry.time.ifBlank { nowTimeStr }
                 } else {
-                    bgInputText = ""
-                    postMealTagChoice = "餐后2小时"
-                    postMealTimeInputText = nowTimeStr
                     currentPostMealIndex = null
+                    bgInputText = ""
+                    postMealTimeInputText = nowTimeStr
                 }
             }
             ItemType.DIET -> {
@@ -294,6 +298,36 @@ fun AddItemDialog(
     val currentRecord = remember(allRecords, selectedDate) { allRecords.find { it.date == selectedDate } }
     val postMealList = remember(currentRecord, selectedPeriod) { currentRecord?.getPostMealList(selectedPeriod) ?: emptyList() }
 
+    val allPostMealTabs = remember(postMealList, extraDynamicPostMealTabs.toList()) {
+        val base = mutableListOf("餐后半小时", "餐后1h", "餐后2h")
+        postMealList.forEach { entry ->
+            val norm = com.example.data.PostMealUtils.normalizeTag(entry.tag.ifBlank { "餐后2h" })
+            if (base.none { com.example.data.PostMealUtils.isTagMatch(it, norm) }) {
+                base.add(norm)
+            }
+        }
+        extraDynamicPostMealTabs.forEach { dyn ->
+            if (base.none { com.example.data.PostMealUtils.isTagMatch(it, dyn) }) {
+                base.add(dyn)
+            }
+        }
+        base.sortWith { a, b ->
+            fun parseHour(t: String): Float {
+                if (t.contains("半小时") || t.contains("0.5")) return 0.5f
+                val m = Regex("""^餐后(\d+(?:\.\d+)?)(?:小时|h)$""").find(t.trim())
+                if (m != null) return m.groupValues[1].toFloatOrNull() ?: 2.0f
+                return 99f
+            }
+            parseHour(a).compareTo(parseHour(b))
+        }
+        base
+    }
+
+    fun findEntryForTab(tab: String, list: List<com.example.data.PostMealEntry>): Pair<Int, com.example.data.PostMealEntry>? {
+        val idx = list.indexOfFirst { com.example.data.PostMealUtils.isTagMatch(it.tag.ifBlank { "餐后2h" }, tab) }
+        return if (idx >= 0) idx to list[idx] else null
+    }
+
     val hasExistingData = when (selectedItemType) {
         ItemType.PRE_MEAL_BG -> {
             val v = when (selectedPeriod) {
@@ -305,11 +339,7 @@ fun AddItemDialog(
             v != null
         }
         ItemType.POST_MEAL_BG -> {
-            if (currentPostMealIndex != null) {
-                currentPostMealIndex in postMealList.indices
-            } else {
-                postMealList.isNotEmpty()
-            }
+            currentPostMealIndex != null && currentPostMealIndex in postMealList.indices
         }
         ItemType.DIET -> {
             val d = when (selectedPeriod) {
@@ -381,7 +411,7 @@ fun AddItemDialog(
         }
         val recordTime = if (selectedItemType == ItemType.POST_MEAL_BG) postMealTimeInputText.trim() else nowTimeStr
         val targetIdx = if (selectedItemType == ItemType.POST_MEAL_BG) {
-            currentPostMealIndex ?: (if (postMealList.isNotEmpty()) 0 else null)
+            currentPostMealIndex
         } else null
 
         onSaveItem(
@@ -623,83 +653,119 @@ fun AddItemDialog(
                     }
 
                     ItemType.POST_MEAL_BG -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // 若该时段有多条餐后血糖记录，提供轻量切换标签
-                            if (postMealList.size > 1) {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)
-                                ) {
-                                    items(postMealList.size) { idx ->
-                                        val entry = postMealList[idx]
-                                        val isSelected = (currentPostMealIndex ?: 0) == idx
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (isSelected) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                            border = if (isSelected) BorderStroke(1.dp, TealPrimary) else null,
-                                            modifier = Modifier.clickable {
-                                                currentPostMealIndex = idx
-                                                bgInputText = String.format(Locale.US, "%.1f", entry.value)
-                                                postMealTagChoice = entry.tag.ifBlank { "餐后2小时" }
-                                                postMealTimeInputText = entry.time.ifBlank { nowTimeStr }
-                                            }
-                                        ) {
-                                            Text(
-                                                text = "${entry.tag.ifBlank { "餐后" }}: ${entry.value}",
-                                                fontSize = 11.sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                            )
-                                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // 动态餐后阶段选项卡（餐后半小时、餐后1h、餐后2h 及 + 新增按钮）
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                allPostMealTabs.forEach { tab ->
+                                    val isSelected = com.example.data.PostMealUtils.isTagMatch(postMealTagChoice, tab)
+                                    val match = findEntryForTab(tab, postMealList)
+                                    val hasData = match != null
+
+                                    val bgColor = when {
+                                        isSelected -> TealPrimary
+                                        hasData -> if (AppThemeColors.isDark) Color(0xFF134E4A).copy(alpha = 0.65f) else Color(0xFFE6F4EA)
+                                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                     }
-                                    item {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                            modifier = Modifier.clickable {
+                                    val border = when {
+                                        isSelected -> null
+                                        hasData -> BorderStroke(1.dp, if (AppThemeColors.isDark) Color(0xFF2DD4BF).copy(alpha = 0.55f) else TealPrimary.copy(alpha = 0.5f))
+                                        else -> null
+                                    }
+                                    val textColor = when {
+                                        isSelected -> Color.White
+                                        hasData -> if (AppThemeColors.isDark) Color(0xFF2DD4BF) else TealPrimary
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = bgColor,
+                                        border = border,
+                                        modifier = Modifier.clickable {
+                                            postMealTagChoice = tab
+                                            if (match != null) {
+                                                currentPostMealIndex = match.first
+                                                bgInputText = String.format(Locale.US, "%.1f", match.second.value)
+                                                postMealTimeInputText = match.second.time.ifBlank { nowTimeStr }
+                                            } else {
                                                 currentPostMealIndex = null
                                                 bgInputText = ""
-                                                postMealTagChoice = "餐后2小时"
+                                                postMealTimeInputText = nowTimeStr
                                             }
+                                        }
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                         ) {
+                                            if (hasData && !isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(if (AppThemeColors.isDark) Color(0xFF2DD4BF) else TealPrimary)
+                                                )
+                                            }
                                             Text(
-                                                text = "+ 新增",
-                                                fontSize = 11.sp,
-                                                color = TealPrimary,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                text = tab,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isSelected || hasData) FontWeight.Bold else FontWeight.Medium,
+                                                color = textColor
                                             )
                                         }
                                     }
                                 }
-                            }
 
-                            // 餐后阶段快捷标签选择
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf("餐后1小时", "餐后2小时", "餐后3小时", "加餐后").forEach { tag ->
-                                    val isSel = postMealTagChoice == tag
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isSel) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable { postMealTagChoice = tag }
+                                // "+ 新增" 按钮（默认向后推延 1h）
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
+                                    modifier = Modifier.clickable {
+                                        val hours = allPostMealTabs.mapNotNull { t ->
+                                            val m = Regex("""^餐后(\d+)h$""").find(com.example.data.PostMealUtils.normalizeTag(t))
+                                            m?.groupValues?.get(1)?.toIntOrNull()
+                                        }
+                                        val maxHour = (hours.maxOrNull() ?: 2).coerceAtLeast(2)
+                                        val nextTab = "餐后${maxHour + 1}h"
+                                        if (!extraDynamicPostMealTabs.contains(nextTab)) {
+                                            extraDynamicPostMealTabs.add(nextTab)
+                                        }
+                                        postMealTagChoice = nextTab
+                                        currentPostMealIndex = null
+                                        bgInputText = ""
+                                        postMealTimeInputText = nowTimeStr
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
                                     ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "新增",
+                                            tint = TealPrimary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
                                         Text(
-                                            text = tag.replace("小时", "h"),
-                                            fontSize = 11.sp,
-                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(vertical = 6.dp),
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            text = "新增",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TealPrimary
                                         )
                                     }
                                 }
                             }
 
+                            // 数值输入框
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -743,6 +809,36 @@ fun AddItemDialog(
                                         Text("+0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
                                     }
                                 }
+                            }
+
+                            // 测量时间点设置
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "测量时间: ",
+                                    fontSize = 11.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedTextField(
+                                    value = postMealTimeInputText,
+                                    onValueChange = { postMealTimeInputText = it },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .width(80.dp)
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "(标准参考: 餐后2h ≤ 10.0 mmol/L)",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
                             }
                         }
                     }
