@@ -62,18 +62,6 @@ import com.example.ui.theme.TealPrimary
 import java.util.Locale
 
 /**
- * 时间轴条目长按操作目标
- */
-private data class TimelineActionTarget(
-    val period: MealPeriod,
-    val itemType: ItemType,
-    val icon: String,
-    val title: String,
-    val detail: String,
-    val postMealIndex: Int? = null
-)
-
-/**
  * 纵向时间轴记录卡片（极简无边框设计）：
  * - 无沉重的大卡片与边框，纯净平铺于时间轴上
  * - 默认无记录时不渲染晨间/午间/傍晚/睡前 4 个空框，只显示极简轻量空提示与“记第一笔”
@@ -88,12 +76,11 @@ fun RecordCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onEditPeriod: ((MealPeriod) -> Unit)? = null,
-    onAddItem: ((MealPeriod, ItemType?) -> Unit)? = null,
+    onAddItem: ((MealPeriod, ItemType?, Int?) -> Unit)? = null,
     onDeletePostMeal: ((MealPeriod, Int) -> Unit)? = null,
     onDeleteSingleItem: ((MealPeriod, ItemType, Int?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var actionTarget by remember { mutableStateOf<TimelineActionTarget?>(null) }
     val activePeriods = buildList {
         if (record.hasMorningData) add(MealPeriod.MORNING)
         if (record.hasLunchData) add(MealPeriod.LUNCH)
@@ -169,7 +156,7 @@ fun RecordCard(
                         color = TealPrimary.copy(alpha = 0.14f),
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null) }
+                            .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null, null) }
                             .testTag("card_quick_add_${record.date}")
                     ) {
                         Row(
@@ -258,7 +245,7 @@ fun RecordCard(
                             color = TealPrimary,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
-                                .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null) }
+                                .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null, null) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
@@ -343,8 +330,7 @@ fun RecordCard(
                             themeColor = themeColor,
                             prevNightInfo = if (period == MealPeriod.MORNING) prevNightInfo else null,
                             onEditPeriod = { onEditPeriod?.invoke(period) ?: onEdit() },
-                            onAddItem = { itemType -> onAddItem?.invoke(period, itemType) },
-                            onActionItem = { actionTarget = it }
+                            onAddItem = { itemType, postMealIdx -> onAddItem?.invoke(period, itemType, postMealIdx) }
                         )
                     }
 
@@ -360,7 +346,7 @@ fun RecordCard(
                             color = TealPrimary.copy(alpha = 0.1f),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null) }
+                                .clickable { onAddItem?.invoke(InsulinRecord.getPeriodForTime(), null, null) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -415,93 +401,6 @@ fun RecordCard(
             }
         }
     }
-
-    // 4. 长按条目操作弹窗（修改 / 删除）
-    if (actionTarget != null) {
-        val target = actionTarget!!
-        AlertDialog(
-            onDismissRequest = { actionTarget = null },
-            title = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(target.icon, fontSize = 20.sp)
-                    Text("管理条目 · ${target.title}", fontSize = 16.5.sp, fontWeight = FontWeight.Bold)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = target.detail,
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    // 1. 编辑修改此记录
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = TealPrimary.copy(alpha = 0.12f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                val p = target.period
-                                actionTarget = null
-                                onEditPeriod?.invoke(p) ?: onEdit()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(18.dp))
-                            Text("编辑修改此记录", fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = TealPrimary)
-                        }
-                    }
-
-                    // 2. 删除此条记录
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.12f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                val p = target.period
-                                val itType = target.itemType
-                                val idx = target.postMealIndex
-                                actionTarget = null
-                                if (onDeleteSingleItem != null) {
-                                    onDeleteSingleItem(p, itType, idx)
-                                } else if (itType == ItemType.POST_MEAL_BG && idx != null) {
-                                    onDeletePostMeal?.invoke(p, idx)
-                                }
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
-                            Text("删除该条记录", fontSize = 14.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { actionTarget = null }) {
-                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
-    }
 }
 
 /**
@@ -524,8 +423,7 @@ private fun TimelinePeriodSection(
     themeColor: Color,
     prevNightInfo: PrevNightInfo? = null,
     onEditPeriod: () -> Unit,
-    onAddItem: (ItemType?) -> Unit,
-    onActionItem: (TimelineActionTarget) -> Unit
+    onAddItem: (ItemType?, Int?) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -628,7 +526,7 @@ private fun TimelinePeriodSection(
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     IconButton(
-                        onClick = { onAddItem(null) },
+                        onClick = { onAddItem(null, null) },
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
@@ -653,7 +551,7 @@ private fun TimelinePeriodSection(
                 }
             }
 
-            // 2. 独立条目：仅渲染有数据的项目（上方带微型时间，无灰底色，长按可管理修改/删除）
+            // 2. 独立条目：仅渲染有数据的项目（上方带微型时间，无灰底色，长按直接调起记一笔修改/删除）
             // 1) 餐前 / 空腹血糖
             if (preBG != null) {
                 TimelineItemPreBGRow(
@@ -662,15 +560,7 @@ private fun TimelinePeriodSection(
                     isFasting = isFasting,
                     timeText = record.getItemTime(period, "preBG"),
                     onLongClick = {
-                        onActionItem(
-                            TimelineActionTarget(
-                                period = period,
-                                itemType = ItemType.PRE_MEAL_BG,
-                                icon = "🩸",
-                                title = preBGLabel,
-                                detail = "${String.format(Locale.US, "%.1f", preBG)} mmol/L"
-                            )
-                        )
+                        onAddItem(ItemType.PRE_MEAL_BG, null)
                     }
                 )
             }
@@ -685,15 +575,7 @@ private fun TimelinePeriodSection(
                     timing = medTiming,
                     timeText = record.getItemTime(period, "med"),
                     onLongClick = {
-                        onActionItem(
-                            TimelineActionTarget(
-                                period = period,
-                                itemType = ItemType.MEDICATION,
-                                icon = "💊",
-                                title = displayMed,
-                                detail = "${if (medDose % 1f == 0f) medDose.toInt().toString() else medDose.toString()} $unit ($medTiming)"
-                            )
-                        )
+                        onAddItem(ItemType.MEDICATION, null)
                     }
                 )
             }
@@ -704,15 +586,7 @@ private fun TimelinePeriodSection(
                     dietText = dietText,
                     timeText = record.getItemTime(period, "diet"),
                     onLongClick = {
-                        onActionItem(
-                            TimelineActionTarget(
-                                period = period,
-                                itemType = ItemType.DIET,
-                                icon = "🍽️",
-                                title = "用餐",
-                                detail = dietText
-                            )
-                        )
+                        onAddItem(ItemType.DIET, null)
                     }
                 )
             }
@@ -723,20 +597,12 @@ private fun TimelinePeriodSection(
                     exerciseText = exerciseText,
                     timeText = record.getItemTime(period, "exercise"),
                     onLongClick = {
-                        onActionItem(
-                            TimelineActionTarget(
-                                period = period,
-                                itemType = ItemType.EXERCISE,
-                                icon = "🏃",
-                                title = "运动",
-                                detail = exerciseText
-                            )
-                        )
+                        onAddItem(ItemType.EXERCISE, null)
                     }
                 )
             }
 
-            // 5) 餐后血糖（支持多条，每条为独立条目，上方带时间，长按弹出管理）
+            // 5) 餐后血糖（支持多条，每条为独立条目，上方带时间，长按直接调起记一笔修改/删除）
             postMealList.forEachIndexed { idx, entry ->
                 TimelineItemPostBGRow(
                     entry = entry,
@@ -747,16 +613,7 @@ private fun TimelinePeriodSection(
                         MealPeriod.NIGHT -> "23:00"
                     },
                     onLongClick = {
-                        onActionItem(
-                            TimelineActionTarget(
-                                period = period,
-                                itemType = ItemType.POST_MEAL_BG,
-                                icon = "📈",
-                                title = entry.tag.ifBlank { "餐后血糖" },
-                                detail = "${String.format(Locale.US, "%.1f", entry.value)} mmol/L (${entry.time.ifBlank { "已录入" }})",
-                                postMealIndex = idx
-                            )
-                        )
+                        onAddItem(ItemType.POST_MEAL_BG, idx)
                     }
                 )
             }

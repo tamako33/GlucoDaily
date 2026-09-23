@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +93,7 @@ fun AddItemDialog(
     initialDate: String?,
     initialPeriod: MealPeriod? = null,
     initialItemType: ItemType? = null,
+    initialPostMealIndex: Int? = null,
     allRecords: List<InsulinRecord>,
     onDismiss: () -> Unit,
     onSaveItem: (
@@ -106,6 +108,7 @@ fun AddItemDialog(
         postMealTag: String,
         postMealTime: String,
         exerciseText: String,
+        postMealIndex: Int?,
         keepDialogOpen: Boolean
     ) -> Unit
 ) {
@@ -125,6 +128,10 @@ fun AddItemDialog(
         mutableStateOf(initialItemType ?: ItemType.PRE_MEAL_BG)
     }
 
+    var currentPostMealIndex by remember(initialPostMealIndex) {
+        mutableStateOf(initialPostMealIndex)
+    }
+
     // 表单状态
     var bgInputText by remember { mutableStateOf("") }
     var dietInputText by remember { mutableStateOf("") }
@@ -139,7 +146,97 @@ fun AddItemDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
-    // 切换时段联动默认药名与时机
+    // 动态回显与载入已有数据
+    fun loadExistingData(date: String, period: MealPeriod, itemType: ItemType, postMealIdx: Int?) {
+        val currentRecord = allRecords.find { it.date == date }
+        when (itemType) {
+            ItemType.PRE_MEAL_BG -> {
+                val bg = when (period) {
+                    MealPeriod.MORNING -> currentRecord?.fastingBG ?: currentRecord?.preBfBG
+                    MealPeriod.LUNCH -> currentRecord?.preLunchBG
+                    MealPeriod.DINNER -> currentRecord?.preDinnerBG
+                    MealPeriod.NIGHT -> currentRecord?.preNightBG
+                }
+                bgInputText = bg?.let { String.format(Locale.US, "%.1f", it) } ?: ""
+            }
+            ItemType.POST_MEAL_BG -> {
+                val list = currentRecord?.getPostMealList(period) ?: emptyList()
+                val entry = if (postMealIdx != null && postMealIdx in list.indices) {
+                    list[postMealIdx]
+                } else {
+                    list.firstOrNull()
+                }
+                if (entry != null) {
+                    bgInputText = String.format(Locale.US, "%.1f", entry.value)
+                    postMealTagChoice = entry.tag.ifBlank { "餐后2小时" }
+                    postMealTimeInputText = entry.time.ifBlank { nowTimeStr }
+                    currentPostMealIndex = if (postMealIdx != null && postMealIdx in list.indices) postMealIdx else 0
+                } else {
+                    bgInputText = ""
+                    postMealTagChoice = "餐后2小时"
+                    postMealTimeInputText = nowTimeStr
+                    currentPostMealIndex = null
+                }
+            }
+            ItemType.DIET -> {
+                val d = when (period) {
+                    MealPeriod.MORNING -> currentRecord?.bfDiet
+                    MealPeriod.LUNCH -> currentRecord?.lunchDiet
+                    MealPeriod.DINNER -> currentRecord?.dinnerDiet
+                    MealPeriod.NIGHT -> currentRecord?.nightDiet
+                } ?: ""
+                dietInputText = d
+            }
+            ItemType.EXERCISE -> {
+                val ex = when (period) {
+                    MealPeriod.MORNING -> currentRecord?.bfExercise
+                    MealPeriod.LUNCH -> currentRecord?.lunchExercise
+                    MealPeriod.DINNER -> currentRecord?.dinnerExercise
+                    MealPeriod.NIGHT -> currentRecord?.nightExercise
+                } ?: ""
+                val match = Regex("""^(.*?)(?:\s+|(?<=[^\d]))(\d+)\s*分钟$""").find(ex.trim())
+                if (match != null) {
+                    exerciseNameInputText = match.groupValues[1].trim()
+                    exerciseDurationInputText = match.groupValues[2].trim()
+                } else if (ex.trim().endsWith("分钟")) {
+                    val numOnly = ex.trim().removeSuffix("分钟").trim()
+                    if (numOnly.all { it.isDigit() }) {
+                        exerciseNameInputText = ""
+                        exerciseDurationInputText = numOnly
+                    } else {
+                        exerciseNameInputText = ex.trim()
+                        exerciseDurationInputText = ""
+                    }
+                } else {
+                    exerciseNameInputText = ex.trim()
+                    exerciseDurationInputText = ""
+                }
+            }
+            ItemType.MEDICATION -> {
+                val (name, dose, timing) = when (period) {
+                    MealPeriod.MORNING -> Triple(currentRecord?.bfMedName ?: "", currentRecord?.bfInsulin, currentRecord?.bfMedTiming ?: "")
+                    MealPeriod.LUNCH -> Triple(currentRecord?.lunchMedName ?: "", currentRecord?.lunchInsulin, currentRecord?.lunchMedTiming ?: "")
+                    MealPeriod.DINNER -> Triple(currentRecord?.dinnerMedName ?: "", currentRecord?.dinnerInsulin, currentRecord?.dinnerMedTiming ?: "")
+                    MealPeriod.NIGHT -> Triple(currentRecord?.nightMedName ?: "", currentRecord?.bedtimeInsulin, currentRecord?.nightMedTiming ?: "")
+                }
+                if (dose != null && dose > 0) {
+                    medDoseInputText = if (dose % 1f == 0f) dose.toInt().toString() else dose.toString()
+                    medNameInputText = name.ifBlank { if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素" }
+                    medTimingChoice = timing.ifBlank { if (period == MealPeriod.NIGHT) "睡前" else "餐前" }
+                } else {
+                    medDoseInputText = ""
+                    medNameInputText = if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
+                    medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else "餐前"
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadExistingData(selectedDate, selectedPeriod, selectedItemType, initialPostMealIndex)
+    }
+
+    // 切换时段联动默认药名与时机及回显已有数据
     fun onPeriodChanged(period: MealPeriod) {
         selectedPeriod = period
         if (period == MealPeriod.NIGHT) {
@@ -152,6 +249,14 @@ fun AddItemDialog(
                 medTimingChoice = "餐前"
             }
         }
+        currentPostMealIndex = null
+        loadExistingData(selectedDate, period, selectedItemType, null)
+    }
+
+    fun onItemTypeChanged(type: ItemType) {
+        selectedItemType = type
+        currentPostMealIndex = null
+        loadExistingData(selectedDate, selectedPeriod, type, null)
     }
 
     // 物理返回键处理
@@ -181,6 +286,8 @@ fun AddItemDialog(
                         datePickerState.selectedDateMillis?.let { millis ->
                             val ld = Instant.ofEpochMilli(millis).atZone(ZoneId.of("UTC")).toLocalDate()
                             selectedDate = ld.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            currentPostMealIndex = null
+                            loadExistingData(selectedDate, selectedPeriod, selectedItemType, null)
                         }
                         showDatePicker = false
                     },
@@ -196,6 +303,62 @@ fun AddItemDialog(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    val currentRecord = remember(allRecords, selectedDate) { allRecords.find { it.date == selectedDate } }
+    val postMealList = remember(currentRecord, selectedPeriod) { currentRecord?.getPostMealList(selectedPeriod) ?: emptyList() }
+
+    val hasExistingData = when (selectedItemType) {
+        ItemType.PRE_MEAL_BG -> {
+            val v = when (selectedPeriod) {
+                MealPeriod.MORNING -> currentRecord?.fastingBG ?: currentRecord?.preBfBG
+                MealPeriod.LUNCH -> currentRecord?.preLunchBG
+                MealPeriod.DINNER -> currentRecord?.preDinnerBG
+                MealPeriod.NIGHT -> currentRecord?.preNightBG
+            }
+            v != null
+        }
+        ItemType.POST_MEAL_BG -> {
+            if (currentPostMealIndex != null) {
+                currentPostMealIndex in postMealList.indices
+            } else {
+                postMealList.isNotEmpty()
+            }
+        }
+        ItemType.DIET -> {
+            val d = when (selectedPeriod) {
+                MealPeriod.MORNING -> currentRecord?.bfDiet
+                MealPeriod.LUNCH -> currentRecord?.lunchDiet
+                MealPeriod.DINNER -> currentRecord?.dinnerDiet
+                MealPeriod.NIGHT -> currentRecord?.nightDiet
+            }
+            !d.isNullOrBlank()
+        }
+        ItemType.EXERCISE -> {
+            val e = when (selectedPeriod) {
+                MealPeriod.MORNING -> currentRecord?.bfExercise
+                MealPeriod.LUNCH -> currentRecord?.lunchExercise
+                MealPeriod.DINNER -> currentRecord?.dinnerExercise
+                MealPeriod.NIGHT -> currentRecord?.nightExercise
+            }
+            !e.isNullOrBlank()
+        }
+        ItemType.MEDICATION -> {
+            val dose = when (selectedPeriod) {
+                MealPeriod.MORNING -> currentRecord?.bfInsulin
+                MealPeriod.LUNCH -> currentRecord?.lunchInsulin
+                MealPeriod.DINNER -> currentRecord?.dinnerInsulin
+                MealPeriod.NIGHT -> currentRecord?.bedtimeInsulin
+            }
+            dose != null && dose > 0
+        }
+    }
+
+    val isInputEmpty = when (selectedItemType) {
+        ItemType.PRE_MEAL_BG, ItemType.POST_MEAL_BG -> bgInputText.trim().isEmpty()
+        ItemType.DIET -> dietInputText.trim().isEmpty()
+        ItemType.EXERCISE -> exerciseNameInputText.trim().isEmpty() && exerciseDurationInputText.trim().isEmpty()
+        ItemType.MEDICATION -> medDoseInputText.trim().isEmpty()
     }
 
     val isInputValid = when (selectedItemType) {
@@ -219,8 +382,10 @@ fun AddItemDialog(
         }
     }
 
+    val canSubmit = isInputValid || (hasExistingData && isInputEmpty)
+
     fun submit(keepOpen: Boolean) {
-        if (!isInputValid) return
+        if (!canSubmit) return
         val formattedExercise = when {
             exerciseNameInputText.isNotBlank() && exerciseDurationInputText.isNotBlank() ->
                 "${exerciseNameInputText.trim()} ${exerciseDurationInputText.trim()}分钟"
@@ -229,6 +394,10 @@ fun AddItemDialog(
             else -> ""
         }
         val recordTime = if (selectedItemType == ItemType.POST_MEAL_BG) postMealTimeInputText.trim() else nowTimeStr
+        val targetIdx = if (selectedItemType == ItemType.POST_MEAL_BG) {
+            currentPostMealIndex ?: (if (postMealList.isNotEmpty()) 0 else null)
+        } else null
+
         onSaveItem(
             selectedDate,
             selectedPeriod,
@@ -241,6 +410,7 @@ fun AddItemDialog(
             postMealTagChoice,
             recordTime,
             formattedExercise,
+            targetIdx,
             keepOpen
         )
         if (keepOpen) {
@@ -249,6 +419,7 @@ fun AddItemDialog(
             medDoseInputText = ""
             exerciseNameInputText = ""
             exerciseDurationInputText = ""
+            currentPostMealIndex = null
         }
     }
 
@@ -398,7 +569,7 @@ fun AddItemDialog(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(if (isSelected) TealPrimary else Color.Transparent)
-                                .clickable { selectedItemType = itemType }
+                                .clickable { onItemTypeChanged(itemType) }
                                 .padding(vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -467,6 +638,56 @@ fun AddItemDialog(
 
                     ItemType.POST_MEAL_BG -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // 若该时段有多条餐后血糖记录，提供轻量切换标签
+                            if (postMealList.size > 1) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)
+                                ) {
+                                    items(postMealList.size) { idx ->
+                                        val entry = postMealList[idx]
+                                        val isSelected = (currentPostMealIndex ?: 0) == idx
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isSelected) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            border = if (isSelected) BorderStroke(1.dp, TealPrimary) else null,
+                                            modifier = Modifier.clickable {
+                                                currentPostMealIndex = idx
+                                                bgInputText = String.format(Locale.US, "%.1f", entry.value)
+                                                postMealTagChoice = entry.tag.ifBlank { "餐后2小时" }
+                                                postMealTimeInputText = entry.time.ifBlank { nowTimeStr }
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "${entry.tag.ifBlank { "餐后" }}: ${entry.value}",
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                    item {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.clickable {
+                                                currentPostMealIndex = null
+                                                bgInputText = ""
+                                                postMealTagChoice = "餐后2小时"
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "+ 新增",
+                                                fontSize = 11.sp,
+                                                color = TealPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             // 餐后阶段快捷标签选择
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -560,50 +781,44 @@ fun AddItemDialog(
                     }
 
                     ItemType.EXERCISE -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                OutlinedTextField(
-                                    value = exerciseNameInputText,
-                                    onValueChange = { exerciseNameInputText = it },
-                                    label = { Text("运动项目") },
-                                    placeholder = { Text("例: 散步、慢跑") },
-                                    singleLine = true,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = TealPrimary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1.3f)
-                                )
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = exerciseNameInputText,
+                                onValueChange = { exerciseNameInputText = it },
+                                label = { Text("运动项目") },
+                                placeholder = { Text("例: 散步、慢跑、太极拳") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TealPrimary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                                OutlinedTextField(
-                                    value = exerciseDurationInputText,
-                                    onValueChange = { exerciseDurationInputText = it },
-                                    label = { Text("运动时长") },
-                                    placeholder = { Text("30") },
-                                    trailingIcon = {
-                                        Text(
-                                            text = "分钟",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(end = 8.dp)
-                                        )
-                                    },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = TealPrimary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+                            OutlinedTextField(
+                                value = exerciseDurationInputText,
+                                onValueChange = { exerciseDurationInputText = it },
+                                label = { Text("运动时长") },
+                                placeholder = { Text("例: 30") },
+                                trailingIcon = {
+                                    Text(
+                                        text = "分钟",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 12.dp)
+                                    )
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TealPrimary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
 
@@ -794,13 +1009,14 @@ fun AddItemDialog(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
+                    val submitButtonText = if (hasExistingData) "保存修改" else "保存条目"
                     Button(
                         onClick = { submit(keepOpen = false) },
-                        enabled = isInputValid,
+                        enabled = canSubmit,
                         colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("保存条目", fontWeight = FontWeight.Bold)
+                        Text(submitButtonText, fontWeight = FontWeight.Bold)
                     }
                 }
             }

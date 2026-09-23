@@ -286,50 +286,12 @@ fun InsulinTrackerScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                            ) {
-                                Text(
-                                    text = "${filteredRecords.size}条",
-                                    fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            // View mode switcher (Cards vs Table)
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
-                                    .padding(2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ViewToggleButton(
-                                    selected = viewMode == ViewMode.CARDS,
-                                    icon = Icons.Default.FormatListBulleted,
-                                    label = "卡片",
-                                    onClick = { viewModel.setViewMode(ViewMode.CARDS) },
-                                    tag = "view_toggle_cards"
-                                )
-
-                                ViewToggleButton(
-                                    selected = viewMode == ViewMode.TABLE,
-                                    icon = Icons.Default.TableChart,
-                                    label = "表格",
-                                    onClick = { viewModel.setViewMode(ViewMode.TABLE) },
-                                    tag = "view_toggle_table"
-                                )
-                            }
-
                             // 1. Manual Theme Switcher Button
                             val (themeIcon, themeDesc) = when (themeMode) {
                                 AppThemeMode.SYSTEM -> Icons.Default.BrightnessAuto to "当前跟随系统（点击切换）"
@@ -544,7 +506,67 @@ fun InsulinTrackerScreen(
                 )
             }
 
-            // 2. Animated Records Section (流畅切换过渡动画)
+            // 2. Records Header & Mode Toggle (位于走势图下方、日历调整栏上方)
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Transparent)
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "记录明细",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "共 ${filteredRecords.size} 条",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // View mode switcher (Cards vs Table)
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                            .padding(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ViewToggleButton(
+                            selected = viewMode == ViewMode.CARDS,
+                            icon = Icons.Default.FormatListBulleted,
+                            label = "卡片",
+                            onClick = { viewModel.setViewMode(ViewMode.CARDS) },
+                            tag = "view_toggle_cards"
+                        )
+
+                        ViewToggleButton(
+                            selected = viewMode == ViewMode.TABLE,
+                            icon = Icons.Default.TableChart,
+                            label = "表格",
+                            onClick = { viewModel.setViewMode(ViewMode.TABLE) },
+                            tag = "view_toggle_table"
+                        )
+                    }
+                }
+            }
+
+            // 3. Animated Records Section (流畅切换过渡动画)
             item {
                 AnimatedContent(
                     targetState = viewMode,
@@ -573,7 +595,7 @@ fun InsulinTrackerScreen(
                             onEdit = { viewModel.openEditDialog(it) },
                             onDelete = { viewModel.promptDelete(it) },
                             onEditPeriod = { record, period -> viewModel.openEditDialog(record, period) },
-                            onAddItem = { record, period, itemType -> viewModel.openAddItemDialog(record.date, period, itemType) },
+                            onAddItem = { record, period, itemType, postMealIdx -> viewModel.openAddItemDialog(record.date, period, itemType, postMealIdx) },
                             onDeletePostMeal = { record, period, idx -> viewModel.deletePostMealEntry(record.date, period, idx) },
                             onDeleteSingleItem = { record, period, itemType, idx ->
                                 viewModel.deleteSingleItem(record.date, period, itemType, idx)
@@ -666,9 +688,10 @@ fun InsulinTrackerScreen(
                 initialDate = state.initialDate,
                 initialPeriod = state.initialPeriod,
                 initialItemType = state.initialItemType,
+                initialPostMealIndex = state.initialPostMealIndex,
                 allRecords = allRecords,
                 onDismiss = { viewModel.dismissDialog() },
-                onSaveItem = { date, period, itemType, bgVal, dietText, medName, dose, medTiming, postMealTag, postMealTime, exerciseText, keepOpen ->
+                onSaveItem = { date, period, itemType, bgVal, dietText, medName, dose, medTiming, postMealTag, postMealTime, exerciseText, postMealIdx, keepOpen ->
                     viewModel.saveSingleItem(
                         date = date,
                         period = period,
@@ -681,6 +704,7 @@ fun InsulinTrackerScreen(
                         postMealTag = postMealTag,
                         postMealTime = postMealTime,
                         exerciseText = exerciseText,
+                        postMealIndex = postMealIdx,
                         keepDialogOpen = keepOpen
                     )
                 }
@@ -934,7 +958,7 @@ private fun DailyCardPager(
     onEdit: (InsulinRecord) -> Unit,
     onDelete: (InsulinRecord) -> Unit,
     onEditPeriod: ((InsulinRecord, MealPeriod) -> Unit)? = null,
-    onAddItem: ((InsulinRecord, MealPeriod, ItemType?) -> Unit)? = null,
+    onAddItem: ((InsulinRecord, MealPeriod, ItemType?, Int?) -> Unit)? = null,
     onDeletePostMeal: ((InsulinRecord, MealPeriod, Int) -> Unit)? = null,
     onDeleteSingleItem: ((InsulinRecord, MealPeriod, ItemType, Int?) -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -1266,7 +1290,7 @@ private fun DailyCardPager(
                 onEdit = { onEdit(record) },
                 onDelete = { onDelete(record) },
                 onEditPeriod = { period -> onEditPeriod?.invoke(record, period) ?: onEdit(record) },
-                onAddItem = { period, itemType -> onAddItem?.invoke(record, period, itemType) },
+                onAddItem = { period, itemType, postMealIdx -> onAddItem?.invoke(record, period, itemType, postMealIdx) },
                 onDeletePostMeal = { period, idx -> onDeletePostMeal?.invoke(record, period, idx) },
                 onDeleteSingleItem = { period, itemType, idx -> onDeleteSingleItem?.invoke(record, period, itemType, idx) },
                 modifier = Modifier

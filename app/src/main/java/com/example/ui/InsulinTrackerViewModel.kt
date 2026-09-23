@@ -67,7 +67,8 @@ sealed class DialogState {
     data class AddItem(
         val initialDate: String? = null,
         val initialPeriod: MealPeriod? = null,
-        val initialItemType: ItemType? = null
+        val initialItemType: ItemType? = null,
+        val initialPostMealIndex: Int? = null
     ) : DialogState()
     data class ConfirmDelete(val record: InsulinRecord) : DialogState()
 }
@@ -171,13 +172,19 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         setThemeMode(next)
     }
 
-    fun openAddItemDialog(date: String? = null, period: MealPeriod? = null, itemType: ItemType? = null) {
+    fun openAddItemDialog(
+        date: String? = null,
+        period: MealPeriod? = null,
+        itemType: ItemType? = null,
+        postMealIndex: Int? = null
+    ) {
         val targetDate = date ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
         val targetPeriod = period ?: InsulinRecord.getPeriodForTime()
         _dialogState.value = DialogState.AddItem(
             initialDate = targetDate,
             initialPeriod = targetPeriod,
-            initialItemType = itemType
+            initialItemType = itemType,
+            initialPostMealIndex = postMealIndex
         )
     }
 
@@ -197,6 +204,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         postMealTag: String = "",
         postMealTime: String = "",
         exerciseText: String = "",
+        postMealIndex: Int? = null,
         keepDialogOpen: Boolean = false
     ) {
         viewModelScope.launch {
@@ -205,6 +213,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                 val now = java.time.LocalTime.now()
                 String.format(java.util.Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
             }
+            var wasDeleted = false
             val updated = when (itemType) {
                 ItemType.PRE_MEAL_BG -> {
                     if (bgValue != null) {
@@ -216,7 +225,14 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                         }
                         base.withItemTime(period, "preBG", recordTime)
                     } else {
-                        existing
+                        wasDeleted = true
+                        val base = when (period) {
+                            MealPeriod.MORNING -> existing.copy(fastingBG = null, preBfBG = null)
+                            MealPeriod.LUNCH -> existing.copy(preLunchBG = null)
+                            MealPeriod.DINNER -> existing.copy(preDinnerBG = null)
+                            MealPeriod.NIGHT -> existing.copy(preNightBG = null)
+                        }
+                        base.withItemTime(period, "preBG", "")
                     }
                 }
                 ItemType.DIET -> {
@@ -229,7 +245,14 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                         }
                         base.withItemTime(period, "diet", recordTime)
                     } else {
-                        existing
+                        wasDeleted = true
+                        val base = when (period) {
+                            MealPeriod.MORNING -> existing.copy(bfDiet = "")
+                            MealPeriod.LUNCH -> existing.copy(lunchDiet = "")
+                            MealPeriod.DINNER -> existing.copy(dinnerDiet = "")
+                            MealPeriod.NIGHT -> existing.copy(nightDiet = "")
+                        }
+                        base.withItemTime(period, "diet", "")
                     }
                 }
                 ItemType.EXERCISE -> {
@@ -242,11 +265,18 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                         }
                         base.withItemTime(period, "exercise", recordTime)
                     } else {
-                        existing
+                        wasDeleted = true
+                        val base = when (period) {
+                            MealPeriod.MORNING -> existing.copy(bfExercise = "")
+                            MealPeriod.LUNCH -> existing.copy(lunchExercise = "")
+                            MealPeriod.DINNER -> existing.copy(dinnerExercise = "")
+                            MealPeriod.NIGHT -> existing.copy(nightExercise = "")
+                        }
+                        base.withItemTime(period, "exercise", "")
                     }
                 }
                 ItemType.MEDICATION -> {
-                    if (dose != null) {
+                    if (dose != null && dose > 0) {
                         val actualName = medName.trim().ifBlank { "胰岛素" }
                         val actualTiming = medTiming.trim().ifBlank { if (period == MealPeriod.NIGHT) "睡前" else "餐前" }
                         val base = when (period) {
@@ -273,23 +303,39 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                         }
                         base.withItemTime(period, "med", recordTime)
                     } else {
-                        existing
+                        wasDeleted = true
+                        val base = when (period) {
+                            MealPeriod.MORNING -> existing.copy(bfMedName = "", bfInsulin = null, bfMedTiming = "")
+                            MealPeriod.LUNCH -> existing.copy(lunchMedName = "", lunchInsulin = null, lunchMedTiming = "")
+                            MealPeriod.DINNER -> existing.copy(dinnerMedName = "", dinnerInsulin = null, dinnerMedTiming = "")
+                            MealPeriod.NIGHT -> existing.copy(nightMedName = "", bedtimeInsulin = null, nightMedTiming = "")
+                        }
+                        base.withItemTime(period, "med", "")
                     }
                 }
                 ItemType.POST_MEAL_BG -> {
-                    if (bgValue != null) {
-                        val currentList = existing.getPostMealList(period).toMutableList()
-                        currentList.add(com.example.data.PostMealEntry(bgValue, recordTime, postMealTag))
-                        val newPrimary = currentList.firstOrNull()?.value
-                        val serializedExtras = com.example.data.PostMealUtils.serializeEntries(currentList)
-                        when (period) {
-                            MealPeriod.MORNING -> existing.copy(postBfBG = newPrimary, postBfBGExtra = serializedExtras)
-                            MealPeriod.LUNCH -> existing.copy(postLunchBG = newPrimary, postLunchBGExtra = serializedExtras)
-                            MealPeriod.DINNER -> existing.copy(postDinnerBG = newPrimary, postDinnerBGExtra = serializedExtras)
-                            MealPeriod.NIGHT -> existing.copy(postNightBG = newPrimary, postNightBGExtra = serializedExtras)
+                    val currentList = existing.getPostMealList(period).toMutableList()
+                    if (postMealIndex != null && postMealIndex in currentList.indices) {
+                        if (bgValue != null) {
+                            currentList[postMealIndex] = com.example.data.PostMealEntry(bgValue, recordTime, postMealTag)
+                        } else {
+                            wasDeleted = true
+                            currentList.removeAt(postMealIndex)
                         }
                     } else {
-                        existing
+                        if (bgValue != null) {
+                            currentList.add(com.example.data.PostMealEntry(bgValue, recordTime, postMealTag))
+                        } else {
+                            wasDeleted = true
+                        }
+                    }
+                    val newPrimary = currentList.firstOrNull()?.value
+                    val serializedExtras = if (currentList.isEmpty()) "" else com.example.data.PostMealUtils.serializeEntries(currentList)
+                    when (period) {
+                        MealPeriod.MORNING -> existing.copy(postBfBG = newPrimary, postBfBGExtra = serializedExtras)
+                        MealPeriod.LUNCH -> existing.copy(postLunchBG = newPrimary, postLunchBGExtra = serializedExtras)
+                        MealPeriod.DINNER -> existing.copy(postDinnerBG = newPrimary, postDinnerBGExtra = serializedExtras)
+                        MealPeriod.NIGHT -> existing.copy(postNightBG = newPrimary, postNightBGExtra = serializedExtras)
                     }
                 }
             }
@@ -307,7 +353,8 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                 ItemType.MEDICATION -> "用药记录"
                 ItemType.POST_MEAL_BG -> "餐后血糖"
             }
-            _toastEvent.emit("已添加「${period.title} · $typeDesc」")
+            val msg = if (wasDeleted) "已删除「${period.title} · $typeDesc」" else "已保存「${period.title} · $typeDesc」"
+            _toastEvent.emit(msg)
             _scrollToDateEvent.emit(date)
             if (!keepDialogOpen) {
                 dismissDialog()
