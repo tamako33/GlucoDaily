@@ -1,20 +1,17 @@
 package com.example.ui.components
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -29,10 +26,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Medication
-import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,11 +36,9 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -69,8 +60,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.BGLevel
-import com.example.data.BGUtils
 import com.example.data.InsulinRecord
 import com.example.data.MealPeriod
 import com.example.data.MedicationData
@@ -84,6 +73,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/**
+ * 极简敏捷单条记录录入弹窗：
+ * - 紧凑轻盈，去除冗余大边框与说明文字
+ * - 1 行 4 段时段胶囊切换，默认根据当前系统时间自动匹配
+ * - 1 行 4 项条目类型选择（血糖、用餐、用药、餐后）
+ * - 聚焦输入，支持即时保存与连续记多笔
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddItemDialog(
@@ -122,33 +118,19 @@ fun AddItemDialog(
         mutableStateOf(initialItemType ?: ItemType.PRE_MEAL_BG)
     }
 
-    // 当前日期已有记录（用于参考与提示）
-    val currentRecordForDate = remember(selectedDate, allRecords) {
-        allRecords.find { it.date == selectedDate }
-    }
-
-    // 表单输入状态
+    // 表单状态
     var bgInputText by remember { mutableStateOf("") }
     var dietInputText by remember { mutableStateOf("") }
-    var medNameInputText by remember { mutableStateOf("门冬胰岛素") }
+    var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
     var medDoseInputText by remember { mutableStateOf("") }
-    var medTimingChoice by remember { mutableStateOf("餐前") }
+    var medTimingChoice by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前") }
     var postMealTagChoice by remember { mutableStateOf("餐后2小时") }
     var postMealTimeInputText by remember { mutableStateOf(nowTimeStr) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
-    // 拦截物理/手势返回键
-    BackHandler {
-        if (showDatePicker) {
-            showDatePicker = false
-        } else {
-            onDismiss()
-        }
-    }
-
-    // 切换时段时自动同步时段专属默认值
+    // 切换时段联动默认药名与时机
     fun onPeriodChanged(period: MealPeriod) {
         selectedPeriod = period
         if (period == MealPeriod.NIGHT) {
@@ -163,7 +145,16 @@ fun AddItemDialog(
         }
     }
 
-    // 日期选择器
+    // 物理返回键处理
+    BackHandler {
+        if (showDatePicker) {
+            showDatePicker = false
+        } else {
+            onDismiss()
+        }
+    }
+
+    // 日期选择弹窗
     if (showDatePicker) {
         val initialEpoch = remember(selectedDate) {
             try {
@@ -216,10 +207,32 @@ fun AddItemDialog(
         }
     }
 
+    fun submit(keepOpen: Boolean) {
+        if (!isInputValid) return
+        onSaveItem(
+            selectedDate,
+            selectedPeriod,
+            selectedItemType,
+            bgInputText.trim().toFloatOrNull(),
+            dietInputText.trim(),
+            medNameInputText.trim(),
+            medDoseInputText.trim().toFloatOrNull(),
+            medTimingChoice,
+            postMealTagChoice,
+            postMealTimeInputText.trim(),
+            keepOpen
+        )
+        if (keepOpen) {
+            bgInputText = ""
+            dietInputText = ""
+            medDoseInputText = ""
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.52f))
+            .background(Color.Black.copy(alpha = 0.5f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -229,11 +242,10 @@ fun AddItemDialog(
     ) {
         Card(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .padding(vertical = 24.dp)
+                .fillMaxWidth(0.92f)
                 .clickable(enabled = false) {}
                 .testTag("add_item_dialog"),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
@@ -242,9 +254,10 @@ fun AddItemDialog(
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
                     .imePadding()
-                    .padding(horizontal = 18.dp, vertical = 16.dp)
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 1. 标题与操作栏
+                // 1. 紧凑顶栏：标题 + 日期轻标签 + 关闭按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -254,904 +267,472 @@ fun AddItemDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(TealPrimary.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Text(
+                            text = "记一笔",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        // 可点击更换日期的轻量胶囊
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.clickable { showDatePicker = true }
                         ) {
-                            Text("➕", fontSize = 16.sp)
-                        }
-                        Column {
-                            Text(
-                                text = "添加记录条目",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "一次增加一个条目，精准归纳时段",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = TealPrimary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = if (selectedDate == today) "今天 ($nowTimeStr)" else selectedDate.substring(5),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 2. 日期选择卡片与系统时间识别提示
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable { showDatePicker = true }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = "选择日期",
-                                    tint = TealPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = formatChineseDate(selectedDate),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (selectedDate == today) "(今天)" else "(点此更换)",
-                                    fontSize = 11.sp,
-                                    color = TealPrimary
-                                )
-                            }
-
-                            // 识别提示标签
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(TealPrimary.copy(alpha = 0.12f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Schedule,
-                                    contentDescription = null,
-                                    tint = TealPrimary,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "系统识别: $nowTimeStr",
-                                    fontSize = 10.5.sp,
-                                    color = TealPrimary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "💡 已根据系统当前时间自动为您匹配到「${autoIdentifiedPeriod.title}」，亦可自由点击切换其他时段：",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 3. 时段选择（早、中、晚、睡前）
-                Text(
-                    text = "选择所属时段：",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(6.dp))
+                // 2. 时段切换分段胶囊（1 行极简设计，默认匹配当前系统时间）
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     MealPeriod.entries.forEach { period ->
                         val isSelected = period == selectedPeriod
-                        val periodBg = when (period) {
+                        val periodTheme = when (period) {
                             MealPeriod.MORNING -> AppThemeColors.breakfastColor
                             MealPeriod.LUNCH -> AppThemeColors.lunchColor
                             MealPeriod.DINNER -> AppThemeColors.dinnerColor
                             MealPeriod.NIGHT -> AppThemeColors.bedtimeColor
                         }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) periodBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            border = BorderStroke(
-                                1.dp,
-                                if (isSelected) periodBg else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                            ),
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) periodTheme else Color.Transparent)
                                 .clickable { onPeriodChanged(period) }
-                                .testTag("period_choice_${period.name}")
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = 7.dp, horizontal = 2.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = period.iconText,
-                                    fontSize = 14.sp
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = period.title,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            Text(
+                                text = "${period.iconText} ${period.title}",
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 4. 条目类型选择（餐前血糖，用餐情况，用药，餐后血糖）
-                Text(
-                    text = "自由选择这次增加什么条目：",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
+                // 3. 条目类型切换分段胶囊（1 行极简设计）
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     ItemType.entries.forEach { itemType ->
                         val isSelected = itemType == selectedItemType
-                        val label = when (itemType) {
-                            ItemType.PRE_MEAL_BG -> if (selectedPeriod == MealPeriod.MORNING) "空腹血糖" else if (selectedPeriod == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖"
-                            ItemType.DIET -> "用餐情况"
-                            ItemType.MEDICATION -> "用药"
-                            ItemType.POST_MEAL_BG -> "餐后血糖"
+                        val (icon, label) = when (itemType) {
+                            ItemType.PRE_MEAL_BG -> "🩸" to if (selectedPeriod == MealPeriod.MORNING) "空腹" else if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前"
+                            ItemType.DIET -> "🍽️" to "用餐"
+                            ItemType.MEDICATION -> "💊" to "用药"
+                            ItemType.POST_MEAL_BG -> "📈" to "餐后"
                         }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            border = BorderStroke(
-                                1.dp,
-                                if (isSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                            ),
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) TealPrimary else Color.Transparent)
                                 .clickable { selectedItemType = itemType }
-                                .testTag("item_type_${itemType.name}")
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 2.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                            Text(
+                                text = "$icon $label",
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // 4. 内容表单区（简洁直观，无冗余说明）
+                when (selectedItemType) {
+                    ItemType.PRE_MEAL_BG -> {
+                        val bgTitle = if (selectedPeriod == MealPeriod.MORNING) "空腹血糖" else if (selectedPeriod == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖"
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(text = itemType.icon, fontSize = 15.sp)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = label,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
+                                OutlinedTextField(
+                                    value = bgInputText,
+                                    onValueChange = { bgInputText = it },
+                                    label = { Text(bgTitle) },
+                                    placeholder = { Text("例: 6.0") },
+                                    trailingIcon = { Text("mmol/L", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
                                 )
-                                if (itemType == ItemType.POST_MEAL_BG) {
-                                    Text(
-                                        text = "可多条",
-                                        fontSize = 8.5.sp,
-                                        color = if (isSelected) Color.White.copy(alpha = 0.85f) else TealPrimary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+
+                                // 微调步长按钮
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.clickable {
+                                            val cur = bgInputText.toFloatOrNull() ?: 6.0f
+                                            bgInputText = String.format(Locale.US, "%.1f", (cur - 0.1f).coerceAtLeast(0.5f))
+                                        }
+                                    ) {
+                                        Text("-0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.clickable {
+                                            val cur = bgInputText.toFloatOrNull() ?: 6.0f
+                                            bgInputText = String.format(Locale.US, "%.1f", cur + 0.1f)
+                                        }
+                                    ) {
+                                        Text("+0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
+                                    }
+                                }
+                            }
+
+                            // 常用数值快捷胶囊
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(5.0f, 5.5f, 6.0f, 6.5f, 7.0f, 7.5f).forEach { v ->
+                                    val isCur = bgInputText == v.toString()
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCur) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        modifier = Modifier.clickable { bgInputText = v.toString() }
+                                    ) {
+                                        Text(
+                                            text = "$v",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isCur) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ItemType.POST_MEAL_BG -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // 餐后阶段快捷标签选择
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf("餐后1小时", "餐后2小时", "餐后3小时", "加餐后").forEach { tag ->
+                                    val isSel = postMealTagChoice == tag
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSel) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { postMealTagChoice = tag }
+                                    ) {
+                                        Text(
+                                            text = tag.replace("小时", "h"),
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(vertical = 6.dp),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = bgInputText,
+                                    onValueChange = { bgInputText = it },
+                                    label = { Text("餐后血糖数值") },
+                                    placeholder = { Text("例: 7.8") },
+                                    trailingIcon = { Text("mmol/L", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.clickable {
+                                            val cur = bgInputText.toFloatOrNull() ?: 7.5f
+                                            bgInputText = String.format(Locale.US, "%.1f", (cur - 0.1f).coerceAtLeast(0.5f))
+                                        }
+                                    ) {
+                                        Text("-0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.clickable {
+                                            val cur = bgInputText.toFloatOrNull() ?: 7.5f
+                                            bgInputText = String.format(Locale.US, "%.1f", cur + 0.1f)
+                                        }
+                                    ) {
+                                        Text("+0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
+                                    }
+                                }
+                            }
+
+                            // 常用数值快捷胶囊
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(6.5f, 7.0f, 7.5f, 8.0f, 8.5f, 9.0f).forEach { v ->
+                                    val isCur = bgInputText == v.toString()
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCur) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        modifier = Modifier.clickable { bgInputText = v.toString() }
+                                    ) {
+                                        Text(
+                                            text = "$v",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isCur) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ItemType.DIET -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = dietInputText,
+                                onValueChange = { dietInputText = it },
+                                label = { Text("吃了什么？") },
+                                placeholder = { Text("如：全麦面包、水煮蛋1个、纯牛奶") },
+                                minLines = 2,
+                                maxLines = 4,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TealPrimary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // 快速点选食物标签
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("鸡蛋", "牛奶", "燕麦", "米饭", "全麦面包", "面条", "蔬菜", "鸡胸肉", "鱼肉").forEach { food ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.clickable {
+                                            dietInputText = if (dietInputText.isBlank()) food else "$dietInputText、$food"
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "+ $food",
+                                            fontSize = 11.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ItemType.MEDICATION -> {
+                        var medDropdownExpanded by remember { mutableStateOf(false) }
+                        val unit = MedicationData.detectUnit(medNameInputText)
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // 药名选择
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = medNameInputText,
+                                    onValueChange = { medNameInputText = it },
+                                    label = { Text("药物名称") },
+                                    placeholder = { Text("如：门冬胰岛素") },
+                                    trailingIcon = {
+                                        IconButton(onClick = { medDropdownExpanded = true }) {
+                                            Text("▼", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                DropdownMenu(
+                                    expanded = medDropdownExpanded,
+                                    onDismissRequest = { medDropdownExpanded = false }
+                                ) {
+                                    (MedicationData.commonInsulinMeds.take(4) + MedicationData.commonOralMeds.take(4)).forEach { med ->
+                                        DropdownMenuItem(
+                                            text = { Text(med) },
+                                            onClick = {
+                                                medNameInputText = med
+                                                medDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 剂量与时机
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = medDoseInputText,
+                                    onValueChange = { medDoseInputText = it },
+                                    label = { Text("用药剂量") },
+                                    placeholder = { Text("例: 6") },
+                                    trailingIcon = { Text(unit, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(end = 8.dp)) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                // 时机选择
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(2.dp)
+                                ) {
+                                    listOf("餐前", "餐后", "睡前").forEach { timing ->
+                                        val isSel = medTimingChoice == timing
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSel) TealPrimary else Color.Transparent)
+                                                .clickable { medTimingChoice = timing }
+                                                .padding(horizontal = 8.dp, vertical = 10.dp)
+                                        ) {
+                                            Text(
+                                                text = timing,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 常用剂量微调
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(4f, 6f, 8f, 10f, 12f, 14f).forEach { d ->
+                                    val isCur = medDoseInputText == d.toInt().toString()
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCur) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        modifier = Modifier.clickable { medDoseInputText = d.toInt().toString() }
+                                    ) {
+                                        Text(
+                                            text = "${d.toInt()}$unit",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isCur) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // 5. 针对所选条目类型的专属输入区域
-                when (selectedItemType) {
-                    ItemType.PRE_MEAL_BG -> {
-                        PreMealBGSection(
-                            period = selectedPeriod,
-                            valueText = bgInputText,
-                            onValueChange = { bgInputText = it }
-                        )
-                    }
-                    ItemType.DIET -> {
-                        DietSection(
-                            period = selectedPeriod,
-                            dietText = dietInputText,
-                            onDietChange = { dietInputText = it }
-                        )
-                    }
-                    ItemType.MEDICATION -> {
-                        MedicationSection(
-                            period = selectedPeriod,
-                            medName = medNameInputText,
-                            onMedNameChange = { medNameInputText = it },
-                            dose = medDoseInputText,
-                            onDoseChange = { medDoseInputText = it },
-                            timing = medTimingChoice,
-                            onTimingChange = { medTimingChoice = it }
-                        )
-                    }
-                    ItemType.POST_MEAL_BG -> {
-                        val existingPosts = remember(currentRecordForDate, selectedPeriod) {
-                            currentRecordForDate?.getPostMealList(selectedPeriod) ?: emptyList()
-                        }
-                        PostMealBGSection(
-                            period = selectedPeriod,
-                            valueText = bgInputText,
-                            onValueChange = { bgInputText = it },
-                            tagText = postMealTagChoice,
-                            onTagChange = { postMealTagChoice = it },
-                            timeText = postMealTimeInputText,
-                            onTimeChange = { postMealTimeInputText = it },
-                            existingEntries = existingPosts
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // 6. 底部操作按钮：取消、保存并继续增加、保存
+                // 5. 底部操作栏（极简双按钮）
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
+                    TextButton(
+                        onClick = { submit(keepOpen = true) },
+                        enabled = isInputValid
                     ) {
-                        Text("取消", fontSize = 13.sp)
+                        Text("保存并再加", color = if (isInputValid) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            val bgVal = bgInputText.trim().toFloatOrNull()
-                            val doseVal = medDoseInputText.trim().toFloatOrNull()
-                            onSaveItem(
-                                selectedDate,
-                                selectedPeriod,
-                                selectedItemType,
-                                bgVal,
-                                dietInputText.trim(),
-                                medNameInputText.trim(),
-                                doseVal,
-                                medTimingChoice,
-                                postMealTagChoice,
-                                postMealTimeInputText.trim(),
-                                true // keepDialogOpen
-                            )
-                            // 清理单条输入框，准备增加下一个条目
-                            bgInputText = ""
-                            dietInputText = ""
-                            medDoseInputText = ""
-                        },
-                        enabled = isInputValid,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1.3f)
-                    ) {
-                        Text("保存并再加", fontSize = 12.5.sp, maxLines = 1)
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Button(
-                        onClick = {
-                            val bgVal = bgInputText.trim().toFloatOrNull()
-                            val doseVal = medDoseInputText.trim().toFloatOrNull()
-                            onSaveItem(
-                                selectedDate,
-                                selectedPeriod,
-                                selectedItemType,
-                                bgVal,
-                                dietInputText.trim(),
-                                medNameInputText.trim(),
-                                doseVal,
-                                medTimingChoice,
-                                postMealTagChoice,
-                                postMealTimeInputText.trim(),
-                                false // close dialog
-                            )
-                        },
+                        onClick = { submit(keepOpen = false) },
                         enabled = isInputValid,
                         colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .weight(1.3f)
-                            .testTag("btn_save_item")
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("保存条目", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("保存条目", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun PreMealBGSection(
-    period: MealPeriod,
-    valueText: String,
-    onValueChange: (String) -> Unit
-) {
-    val title = when (period) {
-        MealPeriod.MORNING -> "晨间 · 空腹血糖"
-        MealPeriod.NIGHT -> "睡前 · 睡前血糖"
-        else -> "${period.title} · 餐前血糖"
-    }
-
-    val floatVal = valueText.toFloatOrNull()
-    val status = when (period) {
-        MealPeriod.MORNING -> BGUtils.evaluateFasting(floatVal)
-        else -> BGUtils.evaluatePreMeal(floatVal)
-    }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (status != null) {
-                val (badgeBg, badgeText) = when (status.level) {
-                    BGLevel.NORMAL -> Color(0xFFECFDF5) to Color(0xFF059669)
-                    BGLevel.LOW -> Color(0xFFFEF2F2) to Color(0xFFDC2626)
-                    BGLevel.HIGH -> Color(0xFFFFFBEB) to Color(0xFFD97706)
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(badgeBg)
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = "达标状态: ${status.label} (${status.valueText} mmol/L)",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeText
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = valueText,
-                onValueChange = onValueChange,
-                label = { Text("血糖数值 (mmol/L)") },
-                placeholder = { Text("例如：5.8") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("input_pre_bg"),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TealPrimary,
-                    focusedLabelColor = TealPrimary
-                )
-            )
-
-            // 快速微调按钮
-            StepperButton(text = "-0.1") {
-                val curr = valueText.toFloatOrNull() ?: 6.0f
-                onValueChange(String.format(Locale.US, "%.1f", (curr - 0.1f).coerceAtLeast(0f)))
-            }
-            StepperButton(text = "+0.1") {
-                val curr = valueText.toFloatOrNull() ?: 6.0f
-                onValueChange(String.format(Locale.US, "%.1f", curr + 0.1f))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "参考标准：空腹/餐前血糖标准参考值 3.9 ~ 7.0 mmol/L",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-        // 快捷预设芯片
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            listOf("5.0", "5.5", "6.0", "6.5", "7.0").forEach { preset ->
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier
-                        .clickable { onValueChange(preset) }
-                        .padding(vertical = 2.dp)
-                ) {
-                    Text(
-                        text = preset,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun DietSection(
-    period: MealPeriod,
-    dietText: String,
-    onDietChange: (String) -> Unit
-) {
-    val quickTags = when (period) {
-        MealPeriod.MORNING -> listOf("燕麦片", "水煮蛋", "纯牛奶", "无糖豆浆", "全麦面包", "半根玉米", "鸡蛋羹")
-        MealPeriod.LUNCH -> listOf("杂粮饭半碗", "荞麦面", "清蒸鲈鱼", "清炒西兰花", "番茄炒蛋", "白灼大虾", "去皮鸡胸肉")
-        MealPeriod.DINNER -> listOf("紫薯小半个", "豆腐蔬菜汤", "白灼菜心", "清炖鸡汤", "蒜蓉生菜", "水煮牛肉片")
-        MealPeriod.NIGHT -> listOf("温开水一杯", "无糖酸奶半杯", "少量坚果", "无夜宵")
-    }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "${period.title} · 用餐情况记录",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = dietText,
-            onValueChange = onDietChange,
-            label = { Text("记录餐食食谱与饮食情况") },
-            placeholder = { Text("例如：全麦面包两片、低脂纯牛奶、煎荷包蛋") },
-            maxLines = 3,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("input_diet"),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TealPrimary,
-                focusedLabelColor = TealPrimary
-            )
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "点按快捷添加常用餐食：",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            quickTags.forEach { tag ->
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = TealPrimary.copy(alpha = 0.09f),
-                    border = BorderStroke(0.5.dp, TealPrimary.copy(alpha = 0.25f)),
-                    modifier = Modifier.clickable {
-                        val newText = if (dietText.isBlank()) tag else "$dietText、$tag"
-                        onDietChange(newText)
-                    }
-                ) {
-                    Text(
-                        text = "+ $tag",
-                        fontSize = 11.sp,
-                        color = TealPrimary,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MedicationSection(
-    period: MealPeriod,
-    medName: String,
-    onMedNameChange: (String) -> Unit,
-    dose: String,
-    onDoseChange: (String) -> Unit,
-    timing: String,
-    onTimingChange: (String) -> Unit
-) {
-    val commonMeds = listOf(
-        "门冬胰岛素", "赖脯胰岛素", "甘精胰岛素", "地特胰岛素", "德谷胰岛素",
-        "预混胰岛素(30R)", "二甲双胍", "阿卡波糖", "达格列净", "利格列汀"
-    )
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "${period.title} · 用药记录",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 药物名称输入与常用药品
-        OutlinedTextField(
-            value = medName,
-            onValueChange = onMedNameChange,
-            label = { Text("药品名称") },
-            placeholder = { Text("例如：门冬胰岛素") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("input_med_name"),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TealPrimary,
-                focusedLabelColor = TealPrimary
-            )
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            val quickChoices = if (period == MealPeriod.NIGHT) {
-                listOf("甘精胰岛素", "地特胰岛素", "德谷胰岛素")
-            } else {
-                listOf("门冬胰岛素", "赖脯胰岛素", "二甲双胍")
-            }
-            quickChoices.forEach { name ->
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (medName == name) TealPrimary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    border = BorderStroke(0.5.dp, if (medName == name) TealPrimary else Color.Transparent),
-                    modifier = Modifier.clickable { onMedNameChange(name) }
-                ) {
-                    Text(
-                        text = name,
-                        fontSize = 11.sp,
-                        color = if (medName == name) TealPrimary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // 剂量输入
-        val unit = MedicationData.detectUnit(medName)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = dose,
-                onValueChange = onDoseChange,
-                label = { Text("用药剂量 ($unit)") },
-                placeholder = { Text("例如：8") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("input_med_dose"),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TealPrimary,
-                    focusedLabelColor = TealPrimary
-                )
-            )
-
-            StepperButton(text = "-1") {
-                val curr = dose.toFloatOrNull() ?: 8f
-                onDoseChange(if ((curr - 1f) % 1f == 0f) (curr - 1f).toInt().coerceAtLeast(0).toString() else String.format(Locale.US, "%.1f", (curr - 1f).coerceAtLeast(0f)))
-            }
-            StepperButton(text = "+1") {
-                val curr = dose.toFloatOrNull() ?: 8f
-                onDoseChange(if ((curr + 1f) % 1f == 0f) (curr + 1f).toInt().toString() else String.format(Locale.US, "%.1f", curr + 1f))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // 用药时机
-        Text(
-            text = "用药时机：",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            val timings = if (period == MealPeriod.NIGHT) listOf("睡前", "餐后", "餐前") else listOf("餐前", "餐中", "餐后")
-            timings.forEach { t ->
-                val isSelected = timing == t
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.clickable { onTimingChange(t) }
-                ) {
-                    Text(
-                        text = t,
-                        fontSize = 11.5.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PostMealBGSection(
-    period: MealPeriod,
-    valueText: String,
-    onValueChange: (String) -> Unit,
-    tagText: String,
-    onTagChange: (String) -> Unit,
-    timeText: String,
-    onTimeChange: (String) -> Unit,
-    existingEntries: List<com.example.data.PostMealEntry>
-) {
-    val floatVal = valueText.toFloatOrNull()
-    val status = BGUtils.evaluatePostMeal(floatVal)
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "${period.title} · 餐后血糖",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (status != null) {
-                val (badgeBg, badgeText) = when (status.level) {
-                    BGLevel.NORMAL -> Color(0xFFECFDF5) to Color(0xFF059669)
-                    BGLevel.LOW -> Color(0xFFFEF2F2) to Color(0xFFDC2626)
-                    BGLevel.HIGH -> Color(0xFFFFFBEB) to Color(0xFFD97706)
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(badgeBg)
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = "餐后达标: ${status.label} (${status.valueText} mmol/L)",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeText
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-        // 多条餐后记录提示
-        if (existingEntries.isNotEmpty()) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = TealPrimary.copy(alpha = 0.08f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                    Text(
-                        text = "该时段已有 ${existingEntries.size} 条餐后记录：",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TealPrimary
-                    )
-                    existingEntries.forEachIndexed { idx, entry ->
-                        Text(
-                            text = "  #${idx + 1}: ${String.format(Locale.US, "%.1f", entry.value)} mmol/L ${if (entry.tag.isNotBlank()) "(${entry.tag})" else ""} ${entry.time}",
-                            fontSize = 10.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        text = "✨ 再次保存将作为该时段第 ${existingEntries.size + 1} 条餐后血糖独立增加！",
-                        fontSize = 10.5.sp,
-                        color = TealPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // 数值输入
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = valueText,
-                onValueChange = onValueChange,
-                label = { Text("餐后血糖数值 (mmol/L)") },
-                placeholder = { Text("例如：7.8") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("input_post_bg"),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TealPrimary,
-                    focusedLabelColor = TealPrimary
-                )
-            )
-
-            StepperButton(text = "-0.1") {
-                val curr = valueText.toFloatOrNull() ?: 7.5f
-                onValueChange(String.format(Locale.US, "%.1f", (curr - 0.1f).coerceAtLeast(0f)))
-            }
-            StepperButton(text = "+0.1") {
-                val curr = valueText.toFloatOrNull() ?: 7.5f
-                onValueChange(String.format(Locale.US, "%.1f", curr + 0.1f))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 标签/时机（餐后1小时、餐后2小时、餐后3小时、加测）
-        Text(
-            text = "记录标签（可选择或自定义时间）：",
-            fontSize = 11.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            listOf("餐后1小时", "餐后2小时", "餐后3小时", "加测").forEach { tag ->
-                val isSelected = tagText == tag
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.clickable { onTagChange(tag) }
-                ) {
-                    Text(
-                        text = tag,
-                        fontSize = 11.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "测量时间点: ",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                value = timeText,
-                onValueChange = onTimeChange,
-                singleLine = true,
-                modifier = Modifier
-                    .width(90.dp)
-                    .height(46.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TealPrimary
-                )
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "(标准参考: 餐后2h ≤ 10.0 mmol/L)",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun StepperButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(vertical = 2.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)
-        )
-    }
-}
-
-private fun formatChineseDate(dateStr: String): String {
-    return try {
-        val ld = LocalDate.parse(dateStr)
-        val weekday = when (ld.dayOfWeek) {
-            java.time.DayOfWeek.MONDAY -> "周一"
-            java.time.DayOfWeek.TUESDAY -> "周二"
-            java.time.DayOfWeek.WEDNESDAY -> "周三"
-            java.time.DayOfWeek.THURSDAY -> "周四"
-            java.time.DayOfWeek.FRIDAY -> "周五"
-            java.time.DayOfWeek.SATURDAY -> "周六"
-            java.time.DayOfWeek.SUNDAY -> "周日"
-        }
-        "${ld.year}年${ld.monthValue}月${ld.dayOfMonth}日 $weekday"
-    } catch (_: Exception) {
-        dateStr
     }
 }
