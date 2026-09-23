@@ -23,7 +23,7 @@ data class ParsedVoiceRecord(
     val fastingBG: Float? = null,
     val preBfBG: Float? = null,
     val postBfBG: Float? = null,
-    val bfPostTag: String = "餐后2小时",
+    val bfPostTag: String = "餐后2h",
     val bfMedName: String? = null,
     val bfInsulin: Float? = null,
     val bfMedTiming: String? = null,
@@ -33,7 +33,7 @@ data class ParsedVoiceRecord(
     // 午间 / 午餐
     val preLunchBG: Float? = null,
     val postLunchBG: Float? = null,
-    val lunchPostTag: String = "餐后2小时",
+    val lunchPostTag: String = "餐后2h",
     val lunchMedName: String? = null,
     val lunchInsulin: Float? = null,
     val lunchMedTiming: String? = null,
@@ -43,7 +43,7 @@ data class ParsedVoiceRecord(
     // 傍晚 / 晚餐
     val preDinnerBG: Float? = null,
     val postDinnerBG: Float? = null,
-    val dinnerPostTag: String = "餐后2小时",
+    val dinnerPostTag: String = "餐后2h",
     val dinnerMedName: String? = null,
     val dinnerInsulin: Float? = null,
     val dinnerMedTiming: String? = null,
@@ -53,7 +53,7 @@ data class ParsedVoiceRecord(
     // 睡前
     val preNightBG: Float? = null,
     val postNightBG: Float? = null,
-    val nightPostTag: String = "餐后2小时",
+    val nightPostTag: String = "餐后2h",
     val nightMedName: String? = null,
     val bedtimeInsulin: Float? = null,
     val nightMedTiming: String? = null,
@@ -177,55 +177,56 @@ data class ParsedVoiceRecord(
     fun mergeInto(existingRecord: InsulinRecord?): InsulinRecord {
         val base = existingRecord ?: InsulinRecord(date = this.date)
 
-        val newBfExtra = if (this.postBfBG != null) {
-            val tag = if (this.bfPostTag.isNotBlank()) this.bfPostTag else "餐后2小时"
-            val list = base.getPostMealList(MealPeriod.MORNING).toMutableList()
-            if (list.isEmpty()) {
-                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postBfBG, "", tag)))
-            } else {
-                list[0] = list[0].copy(value = this.postBfBG, tag = tag)
-                PostMealUtils.serializeEntries(list)
+        fun mergePostMeal(period: MealPeriod, bgVal: Float?, rawTag: String): Pair<Float?, String> {
+            if (bgVal == null) {
+                return (when (period) {
+                    MealPeriod.MORNING -> base.postBfBG
+                    MealPeriod.LUNCH -> base.postLunchBG
+                    MealPeriod.DINNER -> base.postDinnerBG
+                    MealPeriod.NIGHT -> base.postNightBG
+                }) to (when (period) {
+                    MealPeriod.MORNING -> base.postBfBGExtra
+                    MealPeriod.LUNCH -> base.postLunchBGExtra
+                    MealPeriod.DINNER -> base.postDinnerBGExtra
+                    MealPeriod.NIGHT -> base.postNightBGExtra
+                })
             }
-        } else base.postBfBGExtra
+            val normTag = PostMealUtils.normalizeTag(rawTag.ifBlank { "餐后2h" })
+            val currentList = base.getPostMealList(period).toMutableList()
+            val existingIdx = currentList.indexOfFirst { PostMealUtils.isTagMatch(it.tag, normTag) }
+            val nowTimeStr = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+            if (existingIdx >= 0) {
+                currentList[existingIdx] = currentList[existingIdx].copy(value = bgVal, tag = normTag)
+            } else {
+                currentList.add(PostMealEntry(bgVal, nowTimeStr, normTag))
+            }
+            // 按阶段时间/小时自然排序（半小时 -> 1h -> 2h -> 3h...）
+            currentList.sortWith { a, b ->
+                fun parseHour(t: String): Float {
+                    if (t.contains("半小时") || t.contains("0.5")) return 0.5f
+                    val m = Regex("""^餐后(\d+(?:\.\d+)?)(?:小时|h)$""").find(t.trim())
+                    if (m != null) return m.groupValues[1].toFloatOrNull() ?: 2.0f
+                    return 99f
+                }
+                val hA = parseHour(a.tag)
+                val hB = parseHour(b.tag)
+                if (hA != hB) hA.compareTo(hB) else a.time.compareTo(b.time)
+            }
+            val newPrimary = currentList.firstOrNull()?.value
+            val serialized = PostMealUtils.serializeEntries(currentList)
+            return newPrimary to serialized
+        }
 
-        val newLunchExtra = if (this.postLunchBG != null) {
-            val tag = if (this.lunchPostTag.isNotBlank()) this.lunchPostTag else "餐后2小时"
-            val list = base.getPostMealList(MealPeriod.LUNCH).toMutableList()
-            if (list.isEmpty()) {
-                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postLunchBG, "", tag)))
-            } else {
-                list[0] = list[0].copy(value = this.postLunchBG, tag = tag)
-                PostMealUtils.serializeEntries(list)
-            }
-        } else base.postLunchBGExtra
-
-        val newDinnerExtra = if (this.postDinnerBG != null) {
-            val tag = if (this.dinnerPostTag.isNotBlank()) this.dinnerPostTag else "餐后2小时"
-            val list = base.getPostMealList(MealPeriod.DINNER).toMutableList()
-            if (list.isEmpty()) {
-                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postDinnerBG, "", tag)))
-            } else {
-                list[0] = list[0].copy(value = this.postDinnerBG, tag = tag)
-                PostMealUtils.serializeEntries(list)
-            }
-        } else base.postDinnerBGExtra
-
-        val newNightExtra = if (this.postNightBG != null) {
-            val tag = if (this.nightPostTag.isNotBlank()) this.nightPostTag else "餐后2小时"
-            val list = base.getPostMealList(MealPeriod.NIGHT).toMutableList()
-            if (list.isEmpty()) {
-                PostMealUtils.serializeEntries(listOf(PostMealEntry(this.postNightBG, "", tag)))
-            } else {
-                list[0] = list[0].copy(value = this.postNightBG, tag = tag)
-                PostMealUtils.serializeEntries(list)
-            }
-        } else base.postNightBGExtra
+        val (bfPostVal, newBfExtra) = mergePostMeal(MealPeriod.MORNING, this.postBfBG, this.bfPostTag)
+        val (lunchPostVal, newLunchExtra) = mergePostMeal(MealPeriod.LUNCH, this.postLunchBG, this.lunchPostTag)
+        val (dinnerPostVal, newDinnerExtra) = mergePostMeal(MealPeriod.DINNER, this.postDinnerBG, this.dinnerPostTag)
+        val (nightPostVal, newNightExtra) = mergePostMeal(MealPeriod.NIGHT, this.postNightBG, this.nightPostTag)
 
         return base.copy(
             date = this.date,
             fastingBG = this.fastingBG ?: base.fastingBG,
             preBfBG = this.preBfBG ?: base.preBfBG,
-            postBfBG = this.postBfBG ?: base.postBfBG,
+            postBfBG = bfPostVal,
             postBfBGExtra = newBfExtra,
             bfMedName = this.bfMedName ?: base.bfMedName,
             bfInsulin = this.bfInsulin ?: base.bfInsulin,
@@ -234,7 +235,7 @@ data class ParsedVoiceRecord(
             bfExercise = if (!this.bfExercise.isNullOrBlank()) this.bfExercise else base.bfExercise,
 
             preLunchBG = this.preLunchBG ?: base.preLunchBG,
-            postLunchBG = this.postLunchBG ?: base.postLunchBG,
+            postLunchBG = lunchPostVal,
             postLunchBGExtra = newLunchExtra,
             lunchMedName = this.lunchMedName ?: base.lunchMedName,
             lunchInsulin = this.lunchInsulin ?: base.lunchInsulin,
@@ -243,7 +244,7 @@ data class ParsedVoiceRecord(
             lunchExercise = if (!this.lunchExercise.isNullOrBlank()) this.lunchExercise else base.lunchExercise,
 
             preDinnerBG = this.preDinnerBG ?: base.preDinnerBG,
-            postDinnerBG = this.postDinnerBG ?: base.postDinnerBG,
+            postDinnerBG = dinnerPostVal,
             postDinnerBGExtra = newDinnerExtra,
             dinnerMedName = this.dinnerMedName ?: base.dinnerMedName,
             dinnerInsulin = this.dinnerInsulin ?: base.dinnerInsulin,
@@ -252,7 +253,7 @@ data class ParsedVoiceRecord(
             dinnerExercise = if (!this.dinnerExercise.isNullOrBlank()) this.dinnerExercise else base.dinnerExercise,
 
             preNightBG = this.preNightBG ?: base.preNightBG,
-            postNightBG = this.postNightBG ?: base.postNightBG,
+            postNightBG = nightPostVal,
             postNightBGExtra = newNightExtra,
             nightMedName = this.nightMedName ?: base.nightMedName,
             bedtimeInsulin = this.bedtimeInsulin ?: base.bedtimeInsulin,
@@ -292,7 +293,7 @@ object VoiceRecordParser {
         var fastingBG: Float? = null
         var preBfBG: Float? = null
         var postBfBG: Float? = null
-        var bfPostTag: String = "餐后2小时"
+        var bfPostTag: String = "餐后2h"
         var bfMedName: String? = null
         var bfInsulin: Float? = null
         var bfMedTiming: String? = null
@@ -301,7 +302,7 @@ object VoiceRecordParser {
 
         var preLunchBG: Float? = null
         var postLunchBG: Float? = null
-        var lunchPostTag: String = "餐后2小时"
+        var lunchPostTag: String = "餐后2h"
         var lunchMedName: String? = null
         var lunchInsulin: Float? = null
         var lunchMedTiming: String? = null
@@ -310,7 +311,7 @@ object VoiceRecordParser {
 
         var preDinnerBG: Float? = null
         var postDinnerBG: Float? = null
-        var dinnerPostTag: String = "餐后2小时"
+        var dinnerPostTag: String = "餐后2h"
         var dinnerMedName: String? = null
         var dinnerInsulin: Float? = null
         var dinnerMedTiming: String? = null
@@ -319,7 +320,7 @@ object VoiceRecordParser {
 
         var preNightBG: Float? = null
         var postNightBG: Float? = null
-        var nightPostTag: String = "餐后2小时"
+        var nightPostTag: String = "餐后2h"
         var nightMedName: String? = null
         var bedtimeInsulin: Float? = null
         var nightMedTiming: String? = null
@@ -566,11 +567,13 @@ object VoiceRecordParser {
     )
 
     private fun splitByMeals(text: String): List<MealSegment> {
+        val currentPeriod = getCurrentPeriodByTime()
         val markers = listOf(
             MealPeriod.MORNING to listOf("早餐", "早饭", "早上", "晨起", "空腹", "早晨", "晨间"),
             MealPeriod.LUNCH to listOf("午餐", "午饭", "中午", "中饭"),
             MealPeriod.DINNER to listOf("晚餐", "晚饭", "晚上", "晚间", "傍晚"),
-            MealPeriod.NIGHT to listOf("睡前", "夜间", "临睡")
+            MealPeriod.NIGHT to listOf("睡前", "夜间", "临睡"),
+            currentPeriod to listOf("刚刚", "刚才", "方才", "适才", "这会儿")
         )
 
         data class MarkerPos(val period: MealPeriod, val index: Int, val length: Int)
@@ -589,7 +592,10 @@ object VoiceRecordParser {
         foundMarkers.sortBy { it.index }
 
         if (foundMarkers.isEmpty()) {
-            return listOf(MealSegment(null, text))
+            val fuzzyPeriod = if (text.contains("刚刚") || text.contains("刚才") || text.contains("方才") ||
+                text.contains("这会儿") || text.contains("适才") || text.startsWith("刚")
+            ) currentPeriod else null
+            return listOf(MealSegment(fuzzyPeriod, text))
         }
 
         val segments = mutableListOf<MealSegment>()
@@ -748,7 +754,10 @@ object VoiceRecordParser {
         }
 
         // 3. 餐后 / 饭后血糖
-        val postPat = Pattern.compile("""(?:餐后(?:[123一二两]小时|[123]h)?|饭后(?:[123一二两]小时|[123]h)?|加餐后)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
+        val postPat = Pattern.compile(
+            """(?:餐后(?:半小时|[1234一二三四两]小时|[0.51234]h)?|饭后(?:半小时|[1234一二三四两]小时|[0.51234]h)?|(?:半小时|[1234一二三四两]小时)前(?:吃的饭|吃完饭|吃过饭|吃完了|吃的)?(?:我现在)?|刚吃完(?:半小时|[123]小时)?)(?:血糖)?(?:是|为|到|测得)?\s*(\d+(?:\.\d+)?)""",
+            Pattern.CASE_INSENSITIVE
+        )
         val mPost = postPat.matcher(text)
         if (mPost.find()) {
             if (isValidBGNumber(mPost.end(1))) {
@@ -768,13 +777,13 @@ object VoiceRecordParser {
         // 5. 跨餐段的明确修饰
         val specificPatterns = mapOf(
             "bf_pre" to Pattern.compile("""(?:早[餐饭]前|早餐餐前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "bf_post" to Pattern.compile("""(?:早[餐饭]后|早餐餐后)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "bf_post" to Pattern.compile("""(?:早[餐饭]后|早餐餐后)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
             "lunch_pre" to Pattern.compile("""(?:午[餐饭]前|中午餐前|中饭前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "lunch_post" to Pattern.compile("""(?:午[餐饭]后|中午餐后|中饭后)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "lunch_post" to Pattern.compile("""(?:午[餐饭]后|中午餐后|中饭后)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
             "dinner_pre" to Pattern.compile("""(?:晚[餐饭]前|晚餐餐前|晚上餐前)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "dinner_post" to Pattern.compile("""(?:晚[餐饭]后|晚餐餐后|晚上餐后)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
+            "dinner_post" to Pattern.compile("""(?:晚[餐饭]后|晚餐餐后|晚上餐后)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE),
             "night_pre" to Pattern.compile("""(?:睡前|夜间)(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)"""),
-            "night_post" to Pattern.compile("""(?:睡前|夜间)(?:(?:[123一二两]小时|[123]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
+            "night_post" to Pattern.compile("""(?:睡前|夜间)(?:(?:半小时|[1234一二三四两]小时|[0.51234]h))?(?:血糖)?(?:是|为|到)?\s*(\d+(?:\.\d+)?)""", Pattern.CASE_INSENSITIVE)
         )
 
         for ((key, pat) in specificPatterns) {
@@ -817,30 +826,82 @@ object VoiceRecordParser {
 
     private fun extractPostMealTag(subText: String): String {
         return when {
-            subText.contains("1小时") || subText.contains("一小时") || subText.contains("1h", ignoreCase = true) -> "餐后1小时"
-            subText.contains("3小时") || subText.contains("三小时") || subText.contains("3h", ignoreCase = true) -> "餐后3小时"
-            subText.contains("加餐") -> "加餐后"
-            else -> "餐后2小时" // 语音识别若未特别指明餐后多少小时，一律默认为餐后两小时
+            subText.contains("半小时") || subText.contains("0.5") || subText.contains("30分") || subText.contains("三十分") -> "餐后半小时"
+            subText.contains("1小时") || subText.contains("一小时") || subText.contains("1h", ignoreCase = true) || subText.contains("60分") -> "餐后1h"
+            subText.contains("3小时") || subText.contains("三小时") || subText.contains("3h", ignoreCase = true) -> "餐后3h"
+            subText.contains("4小时") || subText.contains("四小时") || subText.contains("4h", ignoreCase = true) -> "餐后4h"
+            subText.contains("2小时") || subText.contains("两小时") || subText.contains("二小时") || subText.contains("2h", ignoreCase = true) || subText.contains("120分") -> "餐后2h"
+            else -> "餐后2h" // 语音识别若未特别指明餐后多少小时，一律默认为餐后2小时
         }
     }
 
     private fun extractExercise(text: String, period: MealPeriod?): String? {
         if (text.isBlank()) return null
-        val exercisePatterns = listOf(
-            Pattern.compile("""(?:去|进行了|做了|完成了)?\s*(散步|慢跑|快走|跑步|游泳|骑车|骑行|打太极|太极拳|瑜伽|健身|八段锦|跳操|跳绳|运动|活动|锻炼)\s*(\d+(?:小时|分钟|个半小时)?|半小时|一小时)?"""),
-            Pattern.compile("""(?:运动|锻炼|活动|走|跑)(?:了)?\s*(\d+(?:小时|分钟|个半小时)?|半小时|一小时)""")
+
+        // 倒装句式 1: 动词 + 时长 + 的? + 运动项目名，如 "打了半小时八段锦"、"打了40分钟八段锦"、"练了20分钟瑜伽"、"跑了半小时步"、"走了40分钟路"
+        val invertedPat = Pattern.compile(
+            """(?:去|进行了|做了|完成了|打了|练了|跑了|走了|跳了|游了|骑了)?\s*(\d+(?:小时|分钟|个半小时)?|一个半小时|1个半小时|半小时|一小时|两小时)\s*(?:的)?\s*(八段锦|太极拳|太极|散步|慢跑|快走|跑步|游泳|骑车|骑行|瑜伽|健身|跳操|跳绳|拉伸|步|路|操)"""
         )
-        for (pat in exercisePatterns) {
-            val m = pat.matcher(text)
-            if (m.find()) {
-                val p1 = m.group(1) ?: ""
-                val p2 = if (m.groupCount() >= 2) (m.group(2) ?: "") else ""
-                val res = (p1 + p2).trim()
-                if (res.length >= 2 && !res.contains("血糖") && !res.contains("胰岛素")) {
-                    return res
-                }
+        val mInv = invertedPat.matcher(text)
+        if (mInv.find()) {
+            val durRaw = mInv.group(1) ?: ""
+            val nameRaw = mInv.group(2) ?: ""
+            val sportName = when (nameRaw) {
+                "步" -> "跑步"
+                "路" -> "散步"
+                "操" -> "做操"
+                else -> nameRaw
+            }
+            val durNorm = when {
+                durRaw.contains("一个半小时") || durRaw.contains("1个半小时") -> "90分钟"
+                durRaw.contains("半小时") -> "30分钟"
+                durRaw.contains("一小时") -> "60分钟"
+                durRaw.contains("两小时") -> "120分钟"
+                else -> durRaw
+            }
+            if (sportName.isNotBlank() && durNorm.isNotBlank()) {
+                return "$sportName $durNorm"
             }
         }
+
+        // 标准句式 2: 运动项目名 + 了? + 时长，如 "散步了40分钟"、"八段锦半小时"、"慢跑30分钟"
+        val standardPat = Pattern.compile(
+            """(?:去|进行了|做了|完成了|打了|练了)?\s*(散步|慢跑|快走|跑步|游泳|骑车|骑行|打太极|太极拳|太极|瑜伽|健身|八段锦|跳操|跳绳|运动|活动|锻炼)\s*(?:了)?\s*(\d+(?:小时|分钟|个半小时)?|一个半小时|1个半小时|半小时|一小时|两小时)?"""
+        )
+        val mStd = standardPat.matcher(text)
+        if (mStd.find()) {
+            val p1 = mStd.group(1) ?: ""
+            val p2 = if (mStd.groupCount() >= 2) (mStd.group(2) ?: "") else ""
+            val durNorm = when {
+                p2.contains("一个半小时") || p2.contains("1个半小时") -> "90分钟"
+                p2.contains("半小时") -> "30分钟"
+                p2.contains("一小时") -> "60分钟"
+                p2.contains("两小时") -> "120分钟"
+                else -> p2
+            }
+            val res = (if (durNorm.isNotBlank()) "$p1 $durNorm" else p1).trim()
+            if (res.length >= 2 && !res.contains("血糖") && !res.contains("胰岛素")) {
+                return res
+            }
+        }
+
+        // 句式 3: 纯动词 + 时长，如 "运动了半小时"、"走了40分钟"、"跑了半小时"
+        val verbPat = Pattern.compile(
+            """(?:运动|锻炼|活动|走路|散步|跑步|慢跑)(?:了)?\s*(\d+(?:小时|分钟|个半小时)?|一个半小时|1个半小时|半小时|一小时|两小时)"""
+        )
+        val mV = verbPat.matcher(text)
+        if (mV.find()) {
+            val durRaw = mV.group(1) ?: ""
+            val durNorm = when {
+                durRaw.contains("一个半小时") || durRaw.contains("1个半小时") -> "90分钟"
+                durRaw.contains("半小时") -> "30分钟"
+                durRaw.contains("一小时") -> "60分钟"
+                durRaw.contains("两小时") -> "120分钟"
+                else -> durRaw
+            }
+            return "散步 $durNorm"
+        }
+
         return null
     }
 

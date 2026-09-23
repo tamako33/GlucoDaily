@@ -291,15 +291,63 @@ object MedicationData {
 data class ParsedExercise(val name: String, val duration: String?, val unit: String)
 
 fun parseExercise(text: String): ParsedExercise {
-    val trimmed = text.trim()
-    val regex = Regex("""^(.*?)\s*(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)?$""")
-    val match = regex.find(trimmed)
+    var trimmed = text.trim()
+    if (trimmed.isBlank()) return ParsedExercise(name = "", duration = null, unit = "")
+
+    // 去除常见的口语前缀，如 "打了"、"做了"、"练了"、"去了"
+    trimmed = trimmed.replace(Regex("""^(?:去|进行了|做了|完成了|打了|练了)\s*"""), "")
+
+    // 模式 1: 倒装口语句式，如 "半小时八段锦", "40分钟太极拳", "30分钟散步"
+    val invertedRegex = Regex("""^(\d+(?:\.\d+)?\s*(?:分钟|min|小时|h)|(?:一个半|1个半|半|一|两|1|2)?小时)\s*(?:的)?\s*(.+)$""")
+    val invMatch = invertedRegex.find(trimmed)
+    if (invMatch != null) {
+        val durPart = invMatch.groupValues[1].trim()
+        val namePart = invMatch.groupValues[2].trim()
+        val (normDur, normUnit) = normalizeDuration(durPart)
+        if (normDur.isNotBlank() && namePart.isNotBlank()) {
+            return ParsedExercise(name = namePart, duration = normDur, unit = normUnit)
+        }
+    }
+
+    // 模式 2: 中文口语时长后缀，如 "八段锦半小时", "散步一个半小时", "散步一小时"
+    val cnDurRegex = Regex("""^(.*?)\s*(一个半小时|1个半小时|半小时|一小时|两小时)$""")
+    val cnMatch = cnDurRegex.find(trimmed)
+    if (cnMatch != null) {
+        val name = cnMatch.groupValues[1].trim()
+        val durText = cnMatch.groupValues[2].trim()
+        val (normDur, normUnit) = normalizeDuration(durText)
+        return ParsedExercise(name = name.ifBlank { "运动" }, duration = normDur, unit = normUnit)
+    }
+
+    // 模式 3: 标准格式，如 "八段锦 30分钟", "散步 40 分钟", "慢跑 1.5小时"
+    val standardRegex = Regex("""^(.*?)\s*(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)?$""")
+    val match = standardRegex.find(trimmed)
     if (match != null) {
         val name = match.groupValues[1].trim()
         val duration = match.groupValues[2].trim()
         val rawUnit = match.groupValues[3].trim()
         val unit = if (rawUnit.isBlank()) "分钟" else rawUnit
-        return ParsedExercise(name = name, duration = duration, unit = unit)
+        return ParsedExercise(name = name.ifBlank { "运动" }, duration = duration, unit = unit)
     }
+
     return ParsedExercise(name = trimmed, duration = null, unit = "")
+}
+
+private fun normalizeDuration(durText: String): Pair<String, String> {
+    return when {
+        durText.contains("一个半小时") || durText.contains("1个半小时") -> "90" to "分钟"
+        durText.contains("半小时") -> "30" to "分钟"
+        durText.contains("一小时") || durText.contains("1小时") -> "60" to "分钟"
+        durText.contains("两小时") || durText.contains("2小时") -> "120" to "分钟"
+        else -> {
+            val m = Regex("""^(\d+(?:\.\d+)?)\s*(分钟|min|小时|h)?$""").find(durText)
+            if (m != null) {
+                val num = m.groupValues[1]
+                val u = m.groupValues[2].ifBlank { "分钟" }
+                num to u
+            } else {
+                durText to ""
+            }
+        }
+    }
 }

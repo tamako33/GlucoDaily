@@ -240,12 +240,20 @@ fun AddItemDialog(
             }
         }
         currentPostMealIndex = null
+        extraDynamicPostMealTabs.removeAll { dynTab ->
+            val list = allRecords.find { it.date == selectedDate }?.getPostMealList(period) ?: emptyList()
+            list.none { com.example.data.PostMealUtils.isTagMatch(it.tag, dynTab) }
+        }
         loadExistingData(selectedDate, period, selectedItemType, null)
     }
 
     fun onItemTypeChanged(type: ItemType) {
         selectedItemType = type
         currentPostMealIndex = null
+        extraDynamicPostMealTabs.removeAll { dynTab ->
+            val list = allRecords.find { it.date == selectedDate }?.getPostMealList(selectedPeriod) ?: emptyList()
+            list.none { com.example.data.PostMealUtils.isTagMatch(it.tag, dynTab) }
+        }
         loadExistingData(selectedDate, selectedPeriod, type, null)
     }
 
@@ -302,12 +310,12 @@ fun AddItemDialog(
         val base = mutableListOf("餐后半小时", "餐后1h", "餐后2h")
         postMealList.forEach { entry ->
             val norm = com.example.data.PostMealUtils.normalizeTag(entry.tag.ifBlank { "餐后2h" })
-            if (base.none { com.example.data.PostMealUtils.isTagMatch(it, norm) }) {
+            if (norm != "加餐后" && base.none { com.example.data.PostMealUtils.isTagMatch(it, norm) }) {
                 base.add(norm)
             }
         }
         extraDynamicPostMealTabs.forEach { dyn ->
-            if (base.none { com.example.data.PostMealUtils.isTagMatch(it, dyn) }) {
+            if (dyn != "加餐后" && base.none { com.example.data.PostMealUtils.isTagMatch(it, dyn) }) {
                 base.add(dyn)
             }
         }
@@ -409,7 +417,9 @@ fun AddItemDialog(
             exerciseDurationInputText.isNotBlank() -> "${exerciseDurationInputText.trim()}分钟"
             else -> ""
         }
-        val recordTime = if (selectedItemType == ItemType.POST_MEAL_BG) postMealTimeInputText.trim() else nowTimeStr
+        val recordTime = if (selectedItemType == ItemType.POST_MEAL_BG) {
+            postMealTimeInputText.trim().ifBlank { nowTimeStr }
+        } else nowTimeStr
         val targetIdx = if (selectedItemType == ItemType.POST_MEAL_BG) {
             currentPostMealIndex
         } else null
@@ -436,6 +446,7 @@ fun AddItemDialog(
             exerciseNameInputText = ""
             exerciseDurationInputText = ""
             currentPostMealIndex = null
+            extraDynamicPostMealTabs.clear()
         }
     }
 
@@ -688,6 +699,7 @@ fun AddItemDialog(
                                         color = bgColor,
                                         border = border,
                                         modifier = Modifier.clickable {
+                                            val prevChoice = postMealTagChoice
                                             postMealTagChoice = tab
                                             if (match != null) {
                                                 currentPostMealIndex = match.first
@@ -697,6 +709,11 @@ fun AddItemDialog(
                                                 currentPostMealIndex = null
                                                 bgInputText = ""
                                                 postMealTimeInputText = nowTimeStr
+                                            }
+                                            // 若离开的上一个选项卡是本次临时新增且未保存数据的，切换后立即清除
+                                            if (prevChoice != tab && extraDynamicPostMealTabs.contains(prevChoice) &&
+                                                postMealList.none { com.example.data.PostMealUtils.isTagMatch(it.tag, prevChoice) }) {
+                                                extraDynamicPostMealTabs.remove(prevChoice)
                                             }
                                         }
                                     ) {
@@ -811,35 +828,13 @@ fun AddItemDialog(
                                 }
                             }
 
-                            // 测量时间点设置
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "测量时间: ",
-                                    fontSize = 11.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                OutlinedTextField(
-                                    value = postMealTimeInputText,
-                                    onValueChange = { postMealTimeInputText = it },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .width(80.dp)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = TealPrimary
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "(标准参考: 餐后2h ≤ 10.0 mmol/L)",
-                                    fontSize = 10.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
-                            }
+                            // 标准参考提示（测量时间已由系统根据记录点自动标记）
+                            Text(
+                                text = "💡 标准参考: 餐后2h ≤ 10.0 mmol/L",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(start = 2.dp, top = 2.dp)
+                            )
                         }
                     }
 

@@ -95,4 +95,96 @@ class VoiceRecordParserTest {
         assertTrue(parsed.bfMedName?.contains("甘精") == true || parsed.notes?.contains("二甲双胍") == true)
         assertTrue(parsed.hasAnyData())
     }
+
+    @Test
+    fun testMorningExerciseAfterMealTypoFix() {
+        // "我早上吃完饭后散步了40分种" (含40分种错别字与吃完饭后口语表达)
+        val input = "我早上吃完饭后散步了40分种"
+        val parsed = com.example.data.VoiceRecognitionService.parseOffline(input)
+
+        assertEquals(com.example.data.MealPeriod.MORNING, parsed.targetPeriod)
+        assertNotNull(parsed.bfExercise)
+        assertTrue(parsed.bfExercise?.contains("散步") == true)
+        assertTrue(parsed.bfExercise?.contains("40") == true)
+
+        val parsedEx = com.example.data.parseExercise(parsed.bfExercise!!)
+        assertEquals("散步", parsedEx.name)
+        assertEquals("40", parsedEx.duration)
+        assertEquals("分钟", parsedEx.unit)
+    }
+
+    @Test
+    fun testInvertedExerciseBaduanjin() {
+        // "打了半小时八段锦"
+        val input = "打了半小时八段锦"
+        val parsed = com.example.data.VoiceRecognitionService.parseOffline(input)
+
+        val exStr = parsed.bfExercise ?: parsed.lunchExercise ?: parsed.dinnerExercise ?: parsed.nightExercise
+        assertNotNull("Exercise string should not be null", exStr)
+        assertTrue(exStr!!.contains("八段锦"))
+        assertTrue(exStr.contains("30") || exStr.contains("半小时"))
+
+        val parsedEx = com.example.data.parseExercise(exStr)
+        assertEquals("八段锦", parsedEx.name)
+        assertEquals("30", parsedEx.duration)
+        assertEquals("分钟", parsedEx.unit)
+    }
+
+    @Test
+    fun testPostMealBGDefaultTo2h() {
+        // "我餐后血糖6.8" (未明确餐后时长，一律默认餐后2小时)
+        val input = "我餐后血糖6.8"
+        val parsed = com.example.data.VoiceRecordParser.parse(input)
+
+        val postBG = parsed.postBfBG ?: parsed.postLunchBG ?: parsed.postDinnerBG ?: parsed.postNightBG
+        val postTag = when {
+            parsed.postBfBG != null -> parsed.bfPostTag
+            parsed.postLunchBG != null -> parsed.lunchPostTag
+            parsed.postDinnerBG != null -> parsed.dinnerPostTag
+            else -> parsed.nightPostTag
+        }
+        assertEquals(6.8f, postBG ?: 0f, 0.01f)
+        assertEquals("餐后2h", postTag)
+    }
+
+    @Test
+    fun testPostMealHalfHourAndColloquialAgo() {
+        // 1. "我餐后半小时血糖6.0"
+        val input1 = "我餐后半小时血糖6.0"
+        val parsed1 = com.example.data.VoiceRecordParser.parse(input1)
+        val postBG1 = parsed1.postBfBG ?: parsed1.postLunchBG ?: parsed1.postDinnerBG ?: parsed1.postNightBG
+        val postTag1 = when {
+            parsed1.postBfBG != null -> parsed1.bfPostTag
+            parsed1.postLunchBG != null -> parsed1.lunchPostTag
+            parsed1.postDinnerBG != null -> parsed1.dinnerPostTag
+            else -> parsed1.nightPostTag
+        }
+        assertEquals(6.0f, postBG1 ?: 0f, 0.01f)
+        assertEquals("餐后半小时", postTag1)
+
+        // 2. "我半小时前吃的饭我现在血糖7.2"
+        val input2 = "我半小时前吃的饭我现在血糖7.2"
+        val parsed2 = com.example.data.VoiceRecognitionService.parseOffline(input2)
+        val postBG2 = parsed2.postBfBG ?: parsed2.postLunchBG ?: parsed2.postDinnerBG ?: parsed2.postNightBG
+        val postTag2 = when {
+            parsed2.postBfBG != null -> parsed2.bfPostTag
+            parsed2.postLunchBG != null -> parsed2.lunchPostTag
+            parsed2.postDinnerBG != null -> parsed2.dinnerPostTag
+            else -> parsed2.nightPostTag
+        }
+        assertEquals(7.2f, postBG2 ?: 0f, 0.01f)
+        assertEquals("餐后半小时", postTag2)
+    }
+
+    @Test
+    fun testFuzzyTimeJustNow() {
+        // "我刚刚散步了半小时" (模糊时间词“刚刚”绑定系统当前时段)
+        val input = "我刚刚散步了半小时"
+        val parsed = com.example.data.VoiceRecognitionService.parseOffline(input)
+
+        val exStr = parsed.bfExercise ?: parsed.lunchExercise ?: parsed.dinnerExercise ?: parsed.nightExercise
+        assertNotNull("Should recognize exercise for current period", exStr)
+        assertTrue(exStr!!.contains("散步"))
+        assertTrue(exStr.contains("30") || exStr.contains("半小时"))
+    }
 }
