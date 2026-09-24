@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -80,17 +81,31 @@ fun FrostedGlassDialogOverlay(
         label = "frosted_dialog_anim"
     )
 
-    // 浅色模式为柔和通透的乳白浅色雾面蒙层；黑夜模式逻辑相反，为深沉半透明星空黑曜石蒙层
-    val scrimColor = if (isDark) {
-        Color(0xFF070B14).copy(alpha = 0.68f * animProgress)
-    } else {
-        Color(0xFFF1F5F9).copy(alpha = 0.62f * animProgress)
+    // 强化毛玻璃模糊与散射感：浅色模式使用高密度乳白多层雾面渐变，彻底虚化底层细节；黑夜模式使用深邃夜空星曜渐变
+    val scrimBrush = remember(isDark, animProgress) {
+        if (isDark) {
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFF040711).copy(alpha = 0.88f * animProgress),
+                    Color(0xFF0A101D).copy(alpha = 0.82f * animProgress),
+                    Color(0xFF02050C).copy(alpha = 0.90f * animProgress)
+                )
+            )
+        } else {
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFFFFFFFF).copy(alpha = 0.88f * animProgress),
+                    Color(0xFFF1F5F9).copy(alpha = 0.82f * animProgress),
+                    Color(0xFFE2E8F0).copy(alpha = 0.85f * animProgress)
+                )
+            )
+        }
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(scrimColor)
+            .background(scrimBrush)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()

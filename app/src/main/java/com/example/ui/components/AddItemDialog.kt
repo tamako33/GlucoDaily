@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -142,7 +144,7 @@ fun AddItemDialog(
     var exerciseDurationInputText by remember { mutableStateOf("") }
     var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
     var medDoseInputText by remember { mutableStateOf("") }
-    var medTimingChoice by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前") }
+    var medTimingChoice by remember { mutableStateOf("餐前") }
     var postMealTagChoice by remember { mutableStateOf("餐后2h") }
     var postMealTimeInputText by remember { mutableStateOf(nowTimeStr) }
     val extraDynamicPostMealTabs = remember { mutableStateListOf<String>() }
@@ -212,11 +214,11 @@ fun AddItemDialog(
                 if (dose != null && dose > 0) {
                     medDoseInputText = if (dose % 1f == 0f) dose.toInt().toString() else dose.toString()
                     medNameInputText = name.ifBlank { if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素" }
-                    medTimingChoice = timing.ifBlank { if (period == MealPeriod.NIGHT) "睡前" else "餐前" }
+                    medTimingChoice = if (timing.isBlank() || timing == "睡前") "餐前" else timing
                 } else {
                     medDoseInputText = ""
                     medNameInputText = if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
-                    medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else "餐前"
+                    medTimingChoice = "餐前"
                 }
             }
         }
@@ -232,11 +234,6 @@ fun AddItemDialog(
         if (period == MealPeriod.NIGHT) {
             if (medNameInputText.contains("门冬") || medNameInputText == "胰岛素") {
                 medNameInputText = "甘精胰岛素"
-            }
-            medTimingChoice = "睡前"
-        } else {
-            if (medTimingChoice == "睡前") {
-                medTimingChoice = "餐前"
             }
         }
         currentPostMealIndex = null
@@ -1011,9 +1008,11 @@ fun AddItemDialog(
                                 }
                             }
 
-                            // 剂量与时机
+                            // 剂量与时机（高度精准对齐）
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(IntrinsicSize.Min),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -1033,25 +1032,29 @@ fun AddItemDialog(
                                     modifier = Modifier.weight(1f)
                                 )
 
-                                // 时机选择
+                                // 时机选择（严格分为餐前、餐中、餐后，去除睡前，高度与左侧用药剂量输入框严格对齐）
                                 Row(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .padding(2.dp)
+                                        .padding(3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    listOf("餐前", "餐后", "睡前").forEach { timing ->
+                                    listOf("餐前", "餐中", "餐后").forEach { timing ->
                                         val isSel = medTimingChoice == timing
                                         Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(9.dp))
                                                 .background(if (isSel) TealPrimary else Color.Transparent)
                                                 .clickable { medTimingChoice = timing }
-                                            .padding(horizontal = 8.dp, vertical = 10.dp)
+                                                .padding(horizontal = 9.dp),
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = timing,
-                                                fontSize = 11.5.sp,
+                                                fontSize = 12.sp,
                                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
                                                 color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                                             )

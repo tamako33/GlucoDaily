@@ -1070,7 +1070,7 @@ fun RecordEditDialog(
                                             fontWeight = FontWeight.Medium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        val timingList = if (selectedPeriod == MealPeriod.NIGHT) listOf("餐前", "餐中", "餐后", "睡前") else listOf("餐前", "餐中", "餐后")
+                                        val timingList = listOf("餐前", "餐中", "餐后")
                                         timingList.forEach { timing ->
                                             val isTimingSelected = currentMedTiming == timing
                                             Surface(

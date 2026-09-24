@@ -398,26 +398,29 @@ fun SiriVoiceBottomOverlay(
         }
     }
 
-    // 顶部全屏半透明毛玻璃蒙层遮罩：浅色模式下为柔和通透乳白雾面，黑夜模式相反为深色星空半透明
-    val scrimColor = if (isDark) Color(0xFF070B14).copy(alpha = 0.68f) else Color(0xFFF1F5F9).copy(alpha = 0.58f)
+    // 顶部全屏半透明毛玻璃蒙层遮罩：加强雾面漫反射质感
+    val scrimColor = if (isDark) Color(0xFF040711).copy(alpha = 0.80f) else Color(0xFFF1F5F9).copy(alpha = 0.78f)
 
+    // 底部弥散浮层背景：从底部向上融合App主题色（TealPrimary翡翠蓝绿）的过渡渐变毛玻璃
     val sheetGradient = remember(isDark) {
         if (isDark) {
             Brush.verticalGradient(
                 colors = listOf(
-                    Color(0x000F172A),
-                    Color(0xD90F172A),
-                    Color(0xF50F172A),
-                    Color(0xFF0B1120)
+                    Color(0x000B131F),
+                    Color(0xC00F172A),
+                    Color(0xEB0D1F25),
+                    Color(0xF50A2E33),
+                    Color(0xFF05383C)
                 )
             )
         } else {
             Brush.verticalGradient(
                 colors = listOf(
                     Color(0x00FFFFFF),
-                    Color(0xB3FFFFFF),
-                    Color(0xF0FFFFFF),
-                    Color(0xFAFFFFFF)
+                    Color(0xC8FFFFFF),
+                    Color(0xEFF4FAF9),
+                    Color(0xF5DBF1ED),
+                    Color(0xFCCCEDE7)
                 )
             )
         }

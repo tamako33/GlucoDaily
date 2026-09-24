@@ -186,7 +186,7 @@ fun InsulinTrackerScreen(
             showVoiceDialog ||
             pendingImport != null
     val blurRadius by animateDpAsState(
-        targetValue = if (isAnyDialogOpen) 16.dp else 0.dp,
+        targetValue = if (isAnyDialogOpen) 28.dp else 0.dp,
         animationSpec = tween(220, easing = FastOutSlowInEasing),
         label = "backdrop_blur_anim"
     )
