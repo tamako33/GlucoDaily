@@ -192,20 +192,20 @@ fun VoiceInputDialog(
     val imeBottom = WindowInsets.ime.getBottom(density)
     val isKeyboardOpen = imeBottom > 0
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = true
-        )
-    ) {
+    val isDark = com.example.ui.theme.AppThemeColors.isDark
+
+    FrostedGlassDialogOverlay(
+        onDismissRequest = onDismiss
+    ) { dismissWithAnimation ->
         Surface(
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
+            ),
             tonalElevation = 6.dp,
             modifier = Modifier
-                .imePadding()
-                .padding(bottom = if (isKeyboardOpen) 8.dp else 0.dp)
                 .padding(horizontal = 16.dp, vertical = if (isKeyboardOpen) 8.dp else 24.dp)
                 .fillMaxWidth()
                 .testTag("voice_input_dialog")
@@ -293,7 +293,7 @@ fun VoiceInputDialog(
                     }
 
                     IconButton(
-                        onClick = onDismiss,
+                        onClick = { dismissWithAnimation() },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(

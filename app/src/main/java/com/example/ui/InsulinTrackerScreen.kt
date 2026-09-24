@@ -92,6 +92,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.components.FrostedGlassDialogOverlay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -173,10 +180,28 @@ fun InsulinTrackerScreen(
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
+    
+    val isAnyDialogOpen = dialogState !is DialogState.None ||
+            showSiriVoiceOverlay ||
+            showVoiceDialog ||
+            pendingImport != null
+    val blurRadius by animateDpAsState(
+        targetValue = if (isAnyDialogOpen) 16.dp else 0.dp,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "backdrop_blur_anim"
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (blurRadius > 0.dp && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        Modifier.blur(blurRadius)
+                    } else {
+                        Modifier
+                    }
+                ),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             Column(
@@ -779,25 +804,60 @@ fun InsulinTrackerScreen(
 
     // 备份数据导入确认弹窗（支持应用内导入及外部用其他应用打开时还原确认）
     pendingImport?.let { importData ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissImportDialog() },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.CloudDownload,
-                    contentDescription = null,
-                    tint = TealPrimary,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "发现备份数据包",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FrostedGlassDialogOverlay(
+            onDismissRequest = { viewModel.dismissImportDialog() }
+        ) {
+            val isDark = isSystemInDarkTheme()
+            val cardBg = if (isDark) {
+                Color(0xFF1E293B).copy(alpha = 0.88f)
+            } else {
+                Color.White.copy(alpha = 0.92f)
+            }
+            val cardBorder = if (isDark) {
+                Color.White.copy(alpha = 0.12f)
+            } else {
+                Color.White.copy(alpha = 0.85f)
+            }
+
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, cardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .widthIn(max = 420.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = TealPrimary.copy(alpha = 0.12f),
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = TealPrimary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "发现备份数据包",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
                     if (!importData.fileName.isNullOrBlank()) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -827,48 +887,54 @@ fun InsulinTrackerScreen(
                             }
                         }
                     }
+
                     Text(
                         text = "已识别到 ${importData.count} 条记录\n数据日期：${importData.dateRange}",
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "请确认是否还原备份并选择恢复方式：",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "• 合并导入：保留当前记录，自动更新重合日期的记录（推荐，安全无损）\n• 全量覆盖：清空现有全部数据，完全恢复为该备份中的记录",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.confirmImport(overwrite = false) },
-                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                    modifier = Modifier.testTag("btn_confirm_import_merge")
-                ) {
-                    Text("合并导入 (推荐)")
-                }
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(
-                        onClick = { viewModel.dismissImportDialog() }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("取消")
-                    }
-                    TextButton(
-                        onClick = { viewModel.confirmImport(overwrite = true) },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.testTag("btn_confirm_import_overwrite")
-                    ) {
-                        Text("全量覆盖")
+                        TextButton(
+                            onClick = { viewModel.confirmImport(overwrite = true) },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.testTag("btn_confirm_import_overwrite")
+                        ) {
+                            Text("全量覆盖")
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        TextButton(
+                            onClick = { viewModel.dismissImportDialog() }
+                        ) {
+                            Text("取消")
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Button(
+                            onClick = { viewModel.confirmImport(overwrite = false) },
+                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                            modifier = Modifier.testTag("btn_confirm_import_merge")
+                        ) {
+                            Text("合并导入")
+                        }
                     }
                 }
             }
-        )
+        }
     }
 }
 }

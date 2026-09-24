@@ -257,12 +257,10 @@ fun AddItemDialog(
         loadExistingData(selectedDate, selectedPeriod, type, null)
     }
 
-    // 物理返回键处理
-    BackHandler {
-        if (showDatePicker) {
+    // 物理返回键优先关闭日期选择器
+    if (showDatePicker) {
+        BackHandler {
             showDatePicker = false
-        } else {
-            onDismiss()
         }
     }
 
@@ -450,29 +448,25 @@ fun AddItemDialog(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss
-            )
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        contentAlignment = Alignment.Center
-    ) {
+    FrostedGlassDialogOverlay(
+        onDismissRequest = onDismiss,
+        dismissOnBackPress = !showDatePicker
+    ) { dismissWithAnimation ->
+        val isDark = AppThemeColors.isDark
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .clickable(enabled = false) {}
                 .testTag("add_item_dialog"),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f)
+            ),
+            border = BorderStroke(
+                1.dp,
+                if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -525,7 +519,7 @@ fun AddItemDialog(
                     }
 
                     IconButton(
-                        onClick = onDismiss,
+                        onClick = { dismissWithAnimation() },
                         modifier = Modifier.size(30.dp)
                     ) {
                         Icon(

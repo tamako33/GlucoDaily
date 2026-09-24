@@ -622,29 +622,20 @@ fun RecordEditDialog(
         }
     }
 
-    BackHandler {
-        if (showDatePicker) {
+    // 物理返回键优先关闭日期选择器
+    if (showDatePicker) {
+        BackHandler {
             showDatePicker = false
-        } else {
-            onDismiss()
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.65f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onDismiss() }
-    ) {
+    FrostedGlassDialogOverlay(
+        onDismissRequest = onDismiss,
+        dismissOnBackPress = !showDatePicker
+    ) { dismissWithAnimation ->
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .imePadding()
-                .navigationBarsPadding()
                 .padding(
                     start = 14.dp,
                     end = 14.dp,
@@ -654,6 +645,7 @@ fun RecordEditDialog(
             contentAlignment = Alignment.Center
         ) {
             val maxDialogHeight = maxHeight
+            val isDark = AppThemeColors.isDark
 
             Card(
                 modifier = Modifier
@@ -665,9 +657,15 @@ fun RecordEditDialog(
                         indication = null
                     ) { /* prevent dismissal on card click */ }
                     .testTag("record_edit_dialog"),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f)
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // 1. 顶部紧凑栏：日期选择与关闭按钮（固定在Card顶部，圆角与关闭按钮永不被裁剪）
@@ -719,7 +717,7 @@ fun RecordEditDialog(
                         }
 
                         IconButton(
-                            onClick = onDismiss,
+                            onClick = { dismissWithAnimation() },
                             modifier = Modifier
                                 .size(32.dp)
                                 .testTag("dialog_close_button")

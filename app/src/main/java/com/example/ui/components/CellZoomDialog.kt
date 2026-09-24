@@ -53,18 +53,18 @@ fun CellZoomDialog(
     onDismiss: () -> Unit
 ) {
     val themeColor = detail.highlightColor ?: TealPrimary
+    val isDark = com.example.ui.theme.AppThemeColors.isDark
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
-    ) {
+    FrostedGlassDialogOverlay(
+        onDismissRequest = onDismiss
+    ) { dismissWithAnimation ->
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
+            ),
             tonalElevation = 8.dp,
             shadowElevation = 16.dp,
             modifier = Modifier
@@ -98,7 +98,7 @@ fun CellZoomDialog(
                     }
 
                     IconButton(
-                        onClick = onDismiss,
+                        onClick = { dismissWithAnimation() },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -161,7 +161,7 @@ fun CellZoomDialog(
 
                 // 确定按钮
                 ElevatedButton(
-                    onClick = onDismiss,
+                    onClick = { dismissWithAnimation() },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.elevatedButtonColors(
                         containerColor = themeColor,

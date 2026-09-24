@@ -19,6 +19,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -397,8 +398,8 @@ fun SiriVoiceBottomOverlay(
         }
     }
 
-    // 顶部全屏半透明蒙层遮罩
-    val scrimColor = if (isDark) Color(0xB8000000) else Color(0x330F172A)
+    // 顶部全屏半透明毛玻璃蒙层遮罩：浅色模式下为柔和通透乳白雾面，黑夜模式相反为深色星空半透明
+    val scrimColor = if (isDark) Color(0xFF070B14).copy(alpha = 0.68f) else Color(0xFFF1F5F9).copy(alpha = 0.58f)
 
     val sheetGradient = remember(isDark) {
         if (isDark) {
@@ -414,9 +415,9 @@ fun SiriVoiceBottomOverlay(
             Brush.verticalGradient(
                 colors = listOf(
                     Color(0x00FFFFFF),
-                    Color(0xD9FFFFFF),
-                    Color(0xF8FFFFFF),
-                    Color(0xFFFFFFFF)
+                    Color(0xB3FFFFFF),
+                    Color(0xF0FFFFFF),
+                    Color(0xFAFFFFFF)
                 )
             )
         }
@@ -429,13 +430,13 @@ fun SiriVoiceBottomOverlay(
     AnimatedVisibility(
         visible = isVisible,
         enter = slideInVertically(
-            initialOffsetY = { it },
-            animationSpec = spring(stiffness = 450f, dampingRatio = 0.8f)
-        ) + fadeIn(animationSpec = tween(180)),
+            initialOffsetY = { (it * 0.45f).toInt() },
+            animationSpec = spring(stiffness = 380f, dampingRatio = 0.82f)
+        ) + fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)),
         exit = slideOutVertically(
             targetOffsetY = { it },
-            animationSpec = tween(220, easing = FastOutSlowInEasing)
-        ) + fadeOut(animationSpec = tween(180))
+            animationSpec = tween(200, easing = FastOutLinearInEasing)
+        ) + fadeOut(animationSpec = tween(170))
     ) {
         Box(
             modifier = Modifier
