@@ -97,7 +97,7 @@ object MedicationData {
     /**
      * 自动识别药物并返回匹配的用药单位
      * 胰岛素 -> U
-     * 口服药 -> 片 (或 mg/袋 等)
+     * 口服药 -> 片 (常见口服降糖药统一使用“片”)
      */
     fun detectUnit(medName: String, category: MedCategory? = null): String {
         val name = medName.trim()
@@ -110,18 +110,17 @@ object MedicationData {
         }
         if (name == "口服药" || name.contains("口服药")) {
             return when {
-                name.contains("mg", ignoreCase = true) -> "mg"
                 name.contains("粒") -> "粒"
                 name.contains("袋") -> "袋"
                 else -> "片"
             }
         }
         return when {
-            name.contains("片") -> "片"
             name.contains("粒") -> "粒"
             name.contains("袋") || name.contains("包") -> "袋"
-            cat == MedCategory.ORAL -> "mg"
-            else -> "U"
+            name.contains("支") -> "支"
+            cat == MedCategory.ORAL -> "片"
+            else -> "片"
         }
     }
 

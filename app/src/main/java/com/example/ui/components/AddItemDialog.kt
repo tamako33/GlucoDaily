@@ -47,6 +47,13 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,7 +73,13 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDefaults
+import androidx.compose.material3.TimePickerLayoutType
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -173,6 +186,8 @@ fun AddItemDialog(
     var selectedMedCategory by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) MedCategory.INSULIN else MedicationData.inferCategory(medNameInputText)) }
     var postMealTagChoice by remember { mutableStateOf("餐后2h") }
     var postMealTimeInputText by remember { mutableStateOf(nowTimeStr) }
+    var currentItemTime by remember { mutableStateOf(nowTimeStr) }
+    var isTimeManuallyEdited by remember { mutableStateOf(false) }
     val extraDynamicPostMealTabs = remember { mutableStateListOf<String>() }
 
     // 历史常用药物使用频次统计（用于置顶用户最常用的药物）
@@ -280,6 +295,9 @@ fun AddItemDialog(
                     MealPeriod.NIGHT -> currentRecord?.preNightBG
                 }
                 bgInputText = bg?.let { String.format(Locale.US, "%.1f", it) } ?: ""
+                if (!isTimeManuallyEdited) {
+                    currentItemTime = if (bg != null) (currentRecord?.getItemTime(period, "preBG") ?: nowTimeStr) else nowTimeStr
+                }
             }
             ItemType.POST_MEAL_BG -> {
                 val list = currentRecord?.getPostMealList(period) ?: emptyList()
@@ -294,10 +312,16 @@ fun AddItemDialog(
                     bgInputText = String.format(Locale.US, "%.1f", targetEntry.value)
                     postMealTagChoice = com.example.data.PostMealUtils.normalizeTag(targetEntry.tag.ifBlank { "餐后2h" })
                     postMealTimeInputText = targetEntry.time.ifBlank { nowTimeStr }
+                    if (!isTimeManuallyEdited) {
+                        currentItemTime = targetEntry.time.ifBlank { nowTimeStr }
+                    }
                 } else {
                     currentPostMealIndex = null
                     bgInputText = ""
                     postMealTimeInputText = nowTimeStr
+                    if (!isTimeManuallyEdited) {
+                        currentItemTime = nowTimeStr
+                    }
                 }
             }
             ItemType.DIET -> {
@@ -308,6 +332,9 @@ fun AddItemDialog(
                     MealPeriod.NIGHT -> currentRecord?.nightDiet
                 } ?: ""
                 dietInputText = d
+                if (!isTimeManuallyEdited) {
+                    currentItemTime = if (d.isNotBlank()) (currentRecord?.getItemTime(period, "diet") ?: nowTimeStr) else nowTimeStr
+                }
             }
             ItemType.EXERCISE -> {
                 val ex = when (period) {
@@ -319,6 +346,9 @@ fun AddItemDialog(
                 val parsed = com.example.data.parseExercise(ex)
                 exerciseNameInputText = parsed.name
                 exerciseDurationInputText = parsed.duration ?: ""
+                if (!isTimeManuallyEdited) {
+                    currentItemTime = if (ex.isNotBlank()) (currentRecord?.getItemTime(period, "exercise") ?: nowTimeStr) else nowTimeStr
+                }
             }
             ItemType.MEDICATION -> {
                 val (name, dose, timing) = when (period) {
@@ -332,11 +362,17 @@ fun AddItemDialog(
                     medNameInputText = name.ifBlank { if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素" }
                     medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else if (timing.isBlank() || timing == "睡前") "餐前" else timing
                     selectedMedCategory = MedicationData.inferCategory(medNameInputText)
+                    if (!isTimeManuallyEdited) {
+                        currentItemTime = currentRecord?.getItemTime(period, "med") ?: nowTimeStr
+                    }
                 } else {
                     medDoseInputText = ""
                     medNameInputText = if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
                     medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else "餐前"
                     selectedMedCategory = if (period == MealPeriod.NIGHT) MedCategory.INSULIN else MedicationData.inferCategory(medNameInputText)
+                    if (!isTimeManuallyEdited) {
+                        currentItemTime = nowTimeStr
+                    }
                 }
             }
         }
@@ -364,6 +400,7 @@ fun AddItemDialog(
             val list = allRecords.find { it.date == selectedDate }?.getPostMealList(period) ?: emptyList()
             list.none { com.example.data.PostMealUtils.isTagMatch(it.tag, dynTab) }
         }
+        isTimeManuallyEdited = false
         loadExistingData(selectedDate, period, selectedItemType, null)
     }
 
@@ -374,6 +411,7 @@ fun AddItemDialog(
             val list = allRecords.find { it.date == selectedDate }?.getPostMealList(selectedPeriod) ?: emptyList()
             list.none { com.example.data.PostMealUtils.isTagMatch(it.tag, dynTab) }
         }
+        isTimeManuallyEdited = false
         loadExistingData(selectedDate, selectedPeriod, type, null)
     }
 
@@ -384,8 +422,9 @@ fun AddItemDialog(
         }
     }
 
-    // 日期选择弹窗
+    // 日期与时间选择弹窗（一体化高颜值卡片，彻底消除底部白条，支持自由调整日期与时间）
     if (showDatePicker) {
+        val isDark = AppThemeColors.isDark
         val initialEpoch = remember(selectedDate) {
             try {
                 LocalDate.parse(selectedDate).atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
@@ -394,30 +433,232 @@ fun AddItemDialog(
             }
         }
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialEpoch)
-        DatePickerDialog(
+
+        val (initHour, initMin) = remember(currentItemTime) {
+            try {
+                val parts = currentItemTime.split(":")
+                parts[0].toInt() to parts[1].toInt()
+            } catch (_: Exception) {
+                val now = LocalTime.now()
+                now.hour to now.minute
+            }
+        }
+        val timePickerState = rememberTimePickerState(
+            initialHour = initHour,
+            initialMinute = initMin,
+            is24Hour = true
+        )
+
+        var pickerTab by remember { mutableStateOf(0) } // 0: 日期, 1: 时间
+
+        Dialog(
             onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            val ld = Instant.ofEpochMilli(millis).atZone(ZoneId.of("UTC")).toLocalDate()
-                            selectedDate = ld.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                            currentPostMealIndex = null
-                            loadExistingData(selectedDate, selectedPeriod, selectedItemType, null)
-                        }
-                        showDatePicker = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
-                ) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("取消") }
-            },
-            colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
+            properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            DatePicker(state = datePickerState)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .clip(RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0xFF1E293B) else Color.White
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // 1. 顶栏：标题 + 快捷设为现在按钮
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "选择日期与时间",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = TealPrimary.copy(alpha = if (isDark) 0.22f else 0.12f),
+                            modifier = Modifier.clickable {
+                                val nowD = LocalDate.now()
+                                val nowT = LocalTime.now()
+                                selectedDate = nowD.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                currentItemTime = String.format(Locale.getDefault(), "%02d:%02d", nowT.hour, nowT.minute)
+                                isTimeManuallyEdited = true
+                                showDatePicker = false
+                                currentPostMealIndex = null
+                                loadExistingData(selectedDate, selectedPeriod, selectedItemType, null)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text("⚡", fontSize = 11.sp)
+                                Text(
+                                    text = "设为现在",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TealPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    // 2. 日期 / 时间 选项卡切换
+                    val tempDateStr = datePickerState.selectedDateMillis?.let {
+                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(DateTimeFormatter.ofPattern("MM-dd"))
+                    } ?: selectedDate.substring(5)
+                    val tempTimeStr = String.format(Locale.getDefault(), "%02d:%02d", timePickerState.hour, timePickerState.minute)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            0 to "📅 日期 ($tempDateStr)",
+                            1 to "🕒 时间 ($tempTimeStr)"
+                        ).forEach { (idx, label) ->
+                            val isSel = pickerTab == idx
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSel) TealPrimary else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { pickerTab = idx }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. 内容区：DatePicker 或 TimePicker
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 310.dp, max = 370.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (pickerTab == 0) {
+                            DatePicker(
+                                state = datePickerState,
+                                colors = DatePickerDefaults.colors(
+                                    containerColor = Color.Transparent,
+                                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                    headlineContentColor = MaterialTheme.colorScheme.onSurface,
+                                    weekdayContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    subheadContentColor = MaterialTheme.colorScheme.onSurface,
+                                    navigationContentColor = MaterialTheme.colorScheme.onSurface,
+                                    yearContentColor = MaterialTheme.colorScheme.onSurface,
+                                    currentYearContentColor = TealPrimary,
+                                    selectedYearContentColor = Color.White,
+                                    selectedYearContainerColor = TealPrimary,
+                                    dayContentColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedDayContentColor = Color.White,
+                                    selectedDayContainerColor = TealPrimary,
+                                    todayDateBorderColor = TealPrimary,
+                                    todayContentColor = TealPrimary,
+                                    dividerColor = Color.Transparent
+                                ),
+                                title = null,
+                                headline = null,
+                                showModeToggle = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TimePicker(
+                                    state = timePickerState,
+                                    colors = TimePickerDefaults.colors(
+                                        clockDialColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        clockDialSelectedContentColor = Color.White,
+                                        clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
+                                        selectorColor = TealPrimary,
+                                        containerColor = Color.Transparent,
+                                        periodSelectorBorderColor = TealPrimary,
+                                        periodSelectorSelectedContainerColor = TealPrimary,
+                                        periodSelectorUnselectedContainerColor = Color.Transparent,
+                                        periodSelectorSelectedContentColor = Color.White,
+                                        periodSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
+                                        timeSelectorSelectedContainerColor = TealPrimary.copy(alpha = 0.18f),
+                                        timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        timeSelectorSelectedContentColor = TealPrimary,
+                                        timeSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    layoutType = TimePickerLayoutType.Vertical
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+
+                    // 4. 底部操作按钮栏（同卡片容器，背景一致，绝无白条！）
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { showDatePicker = false }
+                        ) {
+                            Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                datePickerState.selectedDateMillis?.let { millis ->
+                                    val ld = Instant.ofEpochMilli(millis).atZone(ZoneId.of("UTC")).toLocalDate()
+                                    selectedDate = ld.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                                }
+                                currentItemTime = String.format(Locale.getDefault(), "%02d:%02d", timePickerState.hour, timePickerState.minute)
+                                isTimeManuallyEdited = true
+                                currentPostMealIndex = null
+                                loadExistingData(selectedDate, selectedPeriod, selectedItemType, null)
+                                showDatePicker = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("确定", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -535,9 +776,7 @@ fun AddItemDialog(
             exerciseDurationInputText.isNotBlank() -> "${exerciseDurationInputText.trim()}分钟"
             else -> ""
         }
-        val recordTime = if (selectedItemType == ItemType.POST_MEAL_BG) {
-            postMealTimeInputText.trim().ifBlank { nowTimeStr }
-        } else nowTimeStr
+        val recordTime = currentItemTime.trim().ifBlank { nowTimeStr }
         val targetIdx = if (selectedItemType == ItemType.POST_MEAL_BG) {
             currentPostMealIndex
         } else null
@@ -567,6 +806,9 @@ fun AddItemDialog(
             exerciseDurationInputText = ""
             currentPostMealIndex = null
             extraDynamicPostMealTabs.clear()
+            isTimeManuallyEdited = false
+            val nowT = LocalTime.now()
+            currentItemTime = String.format(Locale.getDefault(), "%02d:%02d", nowT.hour, nowT.minute)
         }
     }
 
@@ -630,8 +872,9 @@ fun AddItemDialog(
                                     tint = TealPrimary,
                                     modifier = Modifier.size(13.dp)
                                 )
+                                val datePrefix = if (selectedDate == today) "今天" else selectedDate.substring(5)
                                 Text(
-                                    text = if (selectedDate == today) "今天 ($nowTimeStr)" else selectedDate.substring(5),
+                                    text = "$datePrefix $currentItemTime",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -653,7 +896,7 @@ fun AddItemDialog(
                     }
                 }
 
-                // 2. 时段切换分段胶囊（1 行极简设计，默认匹配当前系统时间）
+                // 2. 时段切换分段胶囊（1 行极简设计，默认匹配当前系统时间，平滑过渡动画）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -670,11 +913,21 @@ fun AddItemDialog(
                             MealPeriod.DINNER -> AppThemeColors.dinnerColor
                             MealPeriod.NIGHT -> AppThemeColors.bedtimeColor
                         }
+                        val animBg by animateColorAsState(
+                            targetValue = if (isSelected) periodTheme else Color.Transparent,
+                            animationSpec = tween(220),
+                            label = "period_chip_bg"
+                        )
+                        val animText by animateColorAsState(
+                            targetValue = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = tween(220),
+                            label = "period_chip_text"
+                        )
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) periodTheme else Color.Transparent)
+                                .background(animBg)
                                 .clickable { onPeriodChanged(period) }
                                 .padding(vertical = 7.dp),
                             contentAlignment = Alignment.Center
@@ -683,13 +936,13 @@ fun AddItemDialog(
                                 text = "${period.iconText} ${period.title}",
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = animText
                             )
                         }
                     }
                 }
 
-                // 3. 条目类型切换分段胶囊（1 行 5 项极简设计）
+                // 3. 条目类型切换分段胶囊（1 行 5 项极简设计，平滑过渡动画）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -707,11 +960,21 @@ fun AddItemDialog(
                             ItemType.POST_MEAL_BG -> "📈" to "餐后"
                             ItemType.EXERCISE -> "🏃" to "运动"
                         }
+                        val animBg by animateColorAsState(
+                            targetValue = if (isSelected) TealPrimary else Color.Transparent,
+                            animationSpec = tween(220),
+                            label = "type_chip_bg"
+                        )
+                        val animText by animateColorAsState(
+                            targetValue = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = tween(220),
+                            label = "type_chip_text"
+                        )
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) TealPrimary else Color.Transparent)
+                                .background(animBg)
                                 .clickable { onItemTypeChanged(itemType) }
                                 .padding(vertical = 7.dp),
                             contentAlignment = Alignment.Center
@@ -720,14 +983,26 @@ fun AddItemDialog(
                                 text = "$icon $label",
                                 fontSize = 11.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = animText
                             )
                         }
                     }
                 }
 
-                // 4. 内容表单区（简洁直观，无冗余说明）
-                when (selectedItemType) {
+                // 4. 内容表单区（带平滑滑动淡入淡出过渡动画）
+                AnimatedContent(
+                    targetState = selectedItemType,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(220)) + slideInHorizontally(
+                            animationSpec = tween(220),
+                            initialOffsetX = { fullWidth -> (fullWidth * 0.08f).toInt() }
+                        )).togetherWith(
+                            fadeOut(animationSpec = tween(180))
+                        )
+                    },
+                    label = "form_content_animation"
+                ) { currentItemType ->
+                    when (currentItemType) {
                     ItemType.PRE_MEAL_BG -> {
                         val bgTitle = if (selectedPeriod == MealPeriod.MORNING) "空腹血糖" else if (selectedPeriod == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖"
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1524,6 +1799,7 @@ fun AddItemDialog(
                             }
                         }
                     }
+                }
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))

@@ -210,8 +210,17 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             val existing = allRecords.value.find { it.date == date } ?: InsulinRecord(date = date)
             val recordTime = postMealTime.ifBlank {
-                val now = java.time.LocalTime.now()
-                String.format(java.util.Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
+                val existingTime = when (itemType) {
+                    ItemType.PRE_MEAL_BG -> existing.getItemTime(period, "preBG")
+                    ItemType.DIET -> existing.getItemTime(period, "diet")
+                    ItemType.EXERCISE -> existing.getItemTime(period, "exercise")
+                    ItemType.MEDICATION -> existing.getItemTime(period, "med")
+                    ItemType.POST_MEAL_BG -> ""
+                }
+                if (existingTime.isNotBlank()) existingTime else {
+                    val now = java.time.LocalTime.now()
+                    String.format(java.util.Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
+                }
             }
             var wasDeleted = false
             val updated = when (itemType) {
