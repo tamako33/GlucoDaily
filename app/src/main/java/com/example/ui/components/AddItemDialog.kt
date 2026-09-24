@@ -1,9 +1,16 @@
 package com.example.ui.components
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,24 +24,29 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -45,6 +57,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,17 +73,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.data.InsulinRecord
 import com.example.data.MealPeriod
 import com.example.data.MedCategory
@@ -78,6 +97,12 @@ import com.example.data.MedicationData
 import com.example.ui.ItemType
 import com.example.ui.theme.AppThemeColors
 import com.example.ui.theme.TealPrimary
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -144,10 +169,101 @@ fun AddItemDialog(
     var exerciseDurationInputText by remember { mutableStateOf("") }
     var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
     var medDoseInputText by remember { mutableStateOf("") }
-    var medTimingChoice by remember { mutableStateOf("餐前") }
+    var medTimingChoice by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前") }
+    var selectedMedCategory by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) MedCategory.INSULIN else MedicationData.inferCategory(medNameInputText)) }
     var postMealTagChoice by remember { mutableStateOf("餐后2h") }
     var postMealTimeInputText by remember { mutableStateOf(nowTimeStr) }
     val extraDynamicPostMealTabs = remember { mutableStateListOf<String>() }
+
+    // 历史常用药物使用频次统计（用于置顶用户最常用的药物）
+    val medFrequencyMap = remember(allRecords) {
+        allRecords.flatMap { record ->
+            listOf(record.bfMedName, record.lunchMedName, record.dinnerMedName, record.nightMedName)
+        }.filter { it.isNotBlank() && it != "胰岛素" && it != "口服药" }
+        .groupingBy { it }
+        .eachCount()
+    }
+
+    // 原相机拍照识别药物逻辑
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isRecognizing by remember { mutableStateOf(false) }
+    var recognitionMessage by remember { mutableStateOf<String?>(null) }
+    var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && currentPhotoUri != null) {
+            isRecognizing = true
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val image = InputImage.fromFilePath(context, currentPhotoUri!!)
+                    val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+                    recognizer.process(image)
+                        .addOnSuccessListener { visionText ->
+                            isRecognizing = false
+                            val result = MedicationData.matchMedicationFromOcr(visionText.text)
+                            if (result.matchedName != null) {
+                                selectedMedCategory = result.category
+                                medNameInputText = result.matchedName
+                                if (result.suggestedDose != null) {
+                                    val doseStr = if (result.suggestedDose % 1f == 0f) {
+                                        result.suggestedDose.toInt().toString()
+                                    } else {
+                                        result.suggestedDose.toString()
+                                    }
+                                    medDoseInputText = doseStr
+                                }
+                                recognitionMessage = "已识别：${result.matchedName}（${result.category.label}）"
+                            } else {
+                                recognitionMessage = "未匹配到列表内的药物，请手动输入药物名称"
+                            }
+                        }
+                        .addOnFailureListener {
+                            isRecognizing = false
+                            recognitionMessage = "未识别到文字，请手动输入药物名称"
+                        }
+                } catch (_: Exception) {
+                    isRecognizing = false
+                    recognitionMessage = "识别失败，请手动输入药物名称"
+                }
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                val newFile = File(context.cacheDir, "med_scan_${System.currentTimeMillis()}.jpg")
+                val newUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", newFile)
+                currentPhotoUri = newUri
+                cameraLauncher.launch(newUri)
+            } catch (_: Exception) {
+                recognitionMessage = "启动相机失败，请手动填写"
+            }
+        } else {
+            recognitionMessage = "需要相机权限以拍照识别药物"
+        }
+    }
+
+    fun triggerCamera() {
+        val permissionCheck = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+        if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val newFile = File(context.cacheDir, "med_scan_${System.currentTimeMillis()}.jpg")
+                val newUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", newFile)
+                currentPhotoUri = newUri
+                cameraLauncher.launch(newUri)
+            } catch (_: Exception) {
+                recognitionMessage = "启动相机失败，请手动填写"
+            }
+        } else {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     var showDatePicker by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -214,11 +330,13 @@ fun AddItemDialog(
                 if (dose != null && dose > 0) {
                     medDoseInputText = if (dose % 1f == 0f) dose.toInt().toString() else dose.toString()
                     medNameInputText = name.ifBlank { if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素" }
-                    medTimingChoice = if (timing.isBlank() || timing == "睡前") "餐前" else timing
+                    medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else if (timing.isBlank() || timing == "睡前") "餐前" else timing
+                    selectedMedCategory = MedicationData.inferCategory(medNameInputText)
                 } else {
                     medDoseInputText = ""
                     medNameInputText = if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
-                    medTimingChoice = "餐前"
+                    medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else "餐前"
+                    selectedMedCategory = if (period == MealPeriod.NIGHT) MedCategory.INSULIN else MedicationData.inferCategory(medNameInputText)
                 }
             }
         }
@@ -234,6 +352,11 @@ fun AddItemDialog(
         if (period == MealPeriod.NIGHT) {
             if (medNameInputText.contains("门冬") || medNameInputText == "胰岛素") {
                 medNameInputText = "甘精胰岛素"
+            }
+            medTimingChoice = "睡前"
+        } else {
+            if (medTimingChoice == "睡前") {
+                medTimingChoice = "餐前"
             }
         }
         currentPostMealIndex = null
@@ -419,6 +542,8 @@ fun AddItemDialog(
             currentPostMealIndex
         } else null
 
+        val actualTiming = if (selectedPeriod == MealPeriod.NIGHT) "睡前" else medTimingChoice
+
         onSaveItem(
             selectedDate,
             selectedPeriod,
@@ -427,7 +552,7 @@ fun AddItemDialog(
             dietInputText.trim(),
             medNameInputText.trim(),
             medDoseInputText.trim().toFloatOrNull(),
-            medTimingChoice,
+            actualTiming,
             postMealTagChoice,
             recordTime,
             formattedExercise,
@@ -891,17 +1016,36 @@ fun AddItemDialog(
                     }
 
                     ItemType.MEDICATION -> {
-                        var selectedMedCategory by remember {
-                            mutableStateOf(
-                                if (medNameInputText in MedicationData.commonOralMeds) MedCategory.ORAL else MedCategory.INSULIN
-                            )
-                        }
                         var medDropdownExpanded by remember { mutableStateOf(false) }
-                        val unit = MedicationData.detectUnit(medNameInputText)
-                        val currentMedList = if (selectedMedCategory == MedCategory.INSULIN) {
-                            MedicationData.commonInsulinMeds
-                        } else {
-                            MedicationData.commonOralMeds
+                        var medNameFocused by remember { mutableStateOf(false) }
+                        var medDoseFocused by remember { mutableStateOf(false) }
+
+                        val unit = MedicationData.detectUnit(medNameInputText, selectedMedCategory)
+
+                        // 综合候选药物列表：优先按历史频次排序置顶常用药，同时包含该类别基础药，通用占位放末尾
+                        val currentMedList = remember(selectedMedCategory, allRecords, medFrequencyMap) {
+                            val baseList = if (selectedMedCategory == MedCategory.INSULIN) {
+                                MedicationData.commonInsulinMeds
+                            } else {
+                                MedicationData.commonOralMeds
+                            }
+                            val historyMeds = allRecords.flatMap { record ->
+                                listOf(record.bfMedName, record.lunchMedName, record.dinnerMedName, record.nightMedName)
+                            }.filter { it.isNotBlank() && it != "胰岛素" && it != "口服药" }
+                            .distinct()
+                            .filter { med ->
+                                MedicationData.inferCategory(med) == selectedMedCategory && med !in baseList
+                            }
+
+                            val combined = (baseList + historyMeds).distinct()
+                            combined.sortedWith(
+                                compareByDescending<String> { med ->
+                                    if (med == "胰岛素" || med == "口服药") -1 else (medFrequencyMap[med] ?: 0)
+                                }.thenBy { med ->
+                                    val idx = baseList.indexOf(med)
+                                    if (idx >= 0) idx else 999
+                                }
+                            )
                         }
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -948,119 +1092,435 @@ fun AddItemDialog(
                                 }
                             }
 
-                            // 2. 药名选择（随所选大类切换药物候选列表）
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                OutlinedTextField(
-                                    value = medNameInputText,
-                                    onValueChange = { medNameInputText = it },
-                                    label = { Text(if (selectedMedCategory == MedCategory.INSULIN) "胰岛素名称" else "口服药名称") },
-                                    placeholder = { Text(if (selectedMedCategory == MedCategory.INSULIN) "如：门冬胰岛素" else "如：二甲双胍") },
-                                    trailingIcon = {
-                                        IconButton(onClick = { medDropdownExpanded = true }) {
-                                            Text("▼", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    },
-                                    singleLine = true,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = TealPrimary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-
-                                DropdownMenu(
-                                    expanded = medDropdownExpanded,
-                                    onDismissRequest = { medDropdownExpanded = false }
-                                ) {
-                                    currentMedList.forEach { med ->
-                                        DropdownMenuItem(
-                                            text = { Text(med) },
-                                            onClick = {
-                                                medNameInputText = med
-                                                medDropdownExpanded = false
+                            // 2. 药名输入框（向左收缩） + 拍照识药按钮（右侧平齐）
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 药名输入框（支持下拉与自由输入）
+                                Box(modifier = Modifier.weight(1f)) {
+                                    BasicTextField(
+                                        value = medNameInputText,
+                                        onValueChange = {
+                                            medNameInputText = it
+                                            selectedMedCategory = MedicationData.inferCategory(it)
+                                        },
+                                        singleLine = true,
+                                        textStyle = TextStyle(
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .onFocusChanged { medNameFocused = it.isFocused },
+                                        decorationBox = { innerTextField ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .border(
+                                                        width = if (medNameFocused) 1.5.dp else 1.dp,
+                                                        color = if (medNameFocused) TealPrimary else MaterialTheme.colorScheme.outlineVariant,
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    )
+                                                    .background(
+                                                        color = if (AppThemeColors.isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    )
+                                                    .padding(start = 12.dp, end = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(modifier = Modifier.weight(1f)) {
+                                                    if (medNameInputText.isEmpty()) {
+                                                        Text(
+                                                            text = if (selectedMedCategory == MedCategory.INSULIN) "例: 门冬胰岛素" else "例: 二甲双胍",
+                                                            fontSize = 13.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                        )
+                                                    }
+                                                    innerTextField()
+                                                }
+                                                IconButton(
+                                                    onClick = { medDropdownExpanded = true },
+                                                    modifier = Modifier.size(36.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.ArrowDropDown,
+                                                        contentDescription = "选择药物",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                             }
+                                        }
+                                    )
+
+                                    // 现代化优化下拉菜单：毛玻璃质感、圆角优雅、常用药置顶标注
+                                    DropdownMenu(
+                                        expanded = medDropdownExpanded,
+                                        onDismissRequest = { medDropdownExpanded = false },
+                                        shape = RoundedCornerShape(16.dp),
+                                        containerColor = if (AppThemeColors.isDark) Color(0xFF1E293B) else MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.25f)),
+                                        modifier = Modifier
+                                            .widthIn(min = 220.dp, max = 290.dp)
+                                            .heightIn(max = 320.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (selectedMedCategory == MedCategory.INSULIN) "💉 常用胰岛素" else "💊 常用口服药",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "高频置顶",
+                                                fontSize = 10.sp,
+                                                color = TealPrimary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                            thickness = 0.5.dp
+                                        )
+                                        currentMedList.forEach { med ->
+                                            val isCurrent = medNameInputText == med
+                                            val freq = medFrequencyMap[med] ?: 0
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = med,
+                                                                fontSize = 13.sp,
+                                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                                                color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            if (freq > 0) {
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = TealPrimary.copy(alpha = 0.12f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "常用 · ${freq}次",
+                                                                        fontSize = 9.5.sp,
+                                                                        fontWeight = FontWeight.SemiBold,
+                                                                        color = TealPrimary,
+                                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                        if (isCurrent) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = "已选",
+                                                                tint = TealPrimary,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                onClick = {
+                                                    medNameInputText = med
+                                                    selectedMedCategory = MedicationData.inferCategory(med)
+                                                    medDropdownExpanded = false
+                                                },
+                                                modifier = Modifier
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isCurrent) TealPrimary.copy(alpha = 0.08f) else Color.Transparent)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // 右侧：拍照识药功能按钮（与药名输入框 50.dp 严格等高）
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = TealPrimary.copy(alpha = if (AppThemeColors.isDark) 0.18f else 0.1f),
+                                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.35f)),
+                                    modifier = Modifier
+                                        .height(50.dp)
+                                        .clickable { triggerCamera() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PhotoCamera,
+                                            contentDescription = "拍照识药",
+                                            tint = TealPrimary,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                        Text(
+                                            text = "拍照识药",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TealPrimary
                                         )
                                     }
                                 }
                             }
 
-                            // 3. 常见药物快速点选胶囊
+                            // OCR 识别状态或提示
+                            if (isRecognizing) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(TealPrimary.copy(alpha = 0.08f))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "🔍 正在拍照识别药盒文字...",
+                                        fontSize = 11.5.sp,
+                                        color = TealPrimary,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            } else if (!recognitionMessage.isNullOrBlank()) {
+                                val isSuccess = recognitionMessage!!.startsWith("已识别")
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSuccess) TealPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = recognitionMessage!!,
+                                            fontSize = 11.5.sp,
+                                            color = if (isSuccess) TealPrimary else MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "关闭",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clickable { recognitionMessage = null }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 3. 常见/高频药物快速点选胶囊（根据用户使用频次降序置顶排列）
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 items(currentMedList.take(6)) { med ->
                                     val isCurrent = medNameInputText == med
+                                    val freq = medFrequencyMap[med] ?: 0
                                     Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (isCurrent) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCurrent) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                                         border = if (isCurrent) BorderStroke(1.dp, TealPrimary) else null,
-                                        modifier = Modifier.clickable { medNameInputText = med }
+                                        modifier = Modifier.clickable {
+                                            medNameInputText = med
+                                            selectedMedCategory = MedicationData.inferCategory(med)
+                                        }
                                     ) {
-                                        Text(
-                                            text = med,
-                                            fontSize = 11.5.sp,
-                                            color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            // 剂量与时机（高度精准对齐）
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(IntrinsicSize.Min),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = medDoseInputText,
-                                    onValueChange = { medDoseInputText = it },
-                                    label = { Text("用药剂量") },
-                                    placeholder = { Text("例: 6") },
-                                    trailingIcon = { Text(unit, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(end = 8.dp)) },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = TealPrimary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                // 时机选择（严格分为餐前、餐中、餐后，去除睡前，高度与左侧用药剂量输入框严格对齐）
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxHeight()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .padding(3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    listOf("餐前", "餐中", "餐后").forEach { timing ->
-                                        val isSel = medTimingChoice == timing
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxHeight()
-                                                .clip(RoundedCornerShape(9.dp))
-                                                .background(if (isSel) TealPrimary else Color.Transparent)
-                                                .clickable { medTimingChoice = timing }
-                                                .padding(horizontal = 9.dp),
-                                            contentAlignment = Alignment.Center
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                                         ) {
+                                            if (freq > 0) {
+                                                Text("⭐", fontSize = 8.5.sp)
+                                            }
                                             Text(
-                                                text = timing,
-                                                fontSize = 12.sp,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                                text = med,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
                                 }
+                            }
+
+                            // 4. 剂量与时机（严格等高 50.dp 平齐，且睡前时段彻底隐藏无意义的餐前/餐中/餐后）
+                            if (selectedPeriod != MealPeriod.NIGHT) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // 用药剂量输入框（高度 50.dp，圆角 12.dp）
+                                    BasicTextField(
+                                        value = medDoseInputText,
+                                        onValueChange = { medDoseInputText = it },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        textStyle = TextStyle(
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp)
+                                            .onFocusChanged { medDoseFocused = it.isFocused },
+                                        decorationBox = { innerTextField ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .border(
+                                                        width = if (medDoseFocused) 1.5.dp else 1.dp,
+                                                        color = if (medDoseFocused) TealPrimary else MaterialTheme.colorScheme.outlineVariant,
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    )
+                                                    .background(
+                                                        color = if (AppThemeColors.isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    )
+                                                    .padding(horizontal = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(modifier = Modifier.weight(1f)) {
+                                                    if (medDoseInputText.isEmpty()) {
+                                                        Text(
+                                                            text = "用药剂量",
+                                                            fontSize = 13.5.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                        )
+                                                    }
+                                                    innerTextField()
+                                                }
+                                                Text(
+                                                    text = unit,
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealPrimary
+                                                )
+                                            }
+                                        }
+                                    )
+
+                                    // 时机选择（餐前、餐中、餐后，高度严格 50.dp，与左侧剂量框上下完全齐平）
+                                    Row(
+                                        modifier = Modifier
+                                            .height(50.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                            .border(
+                                                width = 1.dp,
+                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .padding(3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        listOf("餐前", "餐中", "餐后").forEach { timing ->
+                                            val isSel = medTimingChoice == timing
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxHeight()
+                                                    .clip(RoundedCornerShape(9.dp))
+                                                    .background(if (isSel) TealPrimary else Color.Transparent)
+                                                    .clickable { medTimingChoice = timing }
+                                                    .padding(horizontal = 10.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = timing,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // 睡前时段：无餐食，无须餐前/中/后时机，剂量框直接通栏铺满
+                                BasicTextField(
+                                    value = medDoseInputText,
+                                    onValueChange = { medDoseInputText = it },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    textStyle = TextStyle(
+                                        fontSize = 14.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp)
+                                        .onFocusChanged { medDoseFocused = it.isFocused },
+                                    decorationBox = { innerTextField ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .border(
+                                                    width = if (medDoseFocused) 1.5.dp else 1.dp,
+                                                    color = if (medDoseFocused) TealPrimary else MaterialTheme.colorScheme.outlineVariant,
+                                                    shape = RoundedCornerShape(12.dp)
+                                                )
+                                                .background(
+                                                    color = if (AppThemeColors.isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
+                                                    shape = RoundedCornerShape(12.dp)
+                                                )
+                                                .padding(horizontal = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                if (medDoseInputText.isEmpty()) {
+                                                    Text(
+                                                        text = "睡前用药剂量",
+                                                        fontSize = 13.5.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                    )
+                                                }
+                                                innerTextField()
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = AppThemeColors.bedtimeColor.copy(alpha = 0.12f),
+                                                modifier = Modifier.padding(end = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "🌙 睡前",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = AppThemeColors.bedtimeColor,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = unit,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TealPrimary
+                                            )
+                                        }
+                                    }
+                                )
                             }
                         }
                     }

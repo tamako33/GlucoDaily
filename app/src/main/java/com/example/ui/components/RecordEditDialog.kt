@@ -1058,44 +1058,46 @@ fun RecordEditDialog(
                                         )
                                     }
 
-                                    // 用药时机选择（餐前 / 餐中 / 餐后）
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "时机:",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        val timingList = listOf("餐前", "餐中", "餐后")
-                                        timingList.forEach { timing ->
-                                            val isTimingSelected = currentMedTiming == timing
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = if (isTimingSelected) TealPrimary.copy(alpha = 0.15f)
-                                                       else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                                border = BorderStroke(
-                                                    width = if (isTimingSelected) 1.dp else 0.5.dp,
-                                                    color = if (isTimingSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                                ),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clickable { onMedTimingChange(timing) }
-                                                    .testTag("med_timing_$timing")
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier.padding(vertical = 5.5.dp),
-                                                    contentAlignment = Alignment.Center
+                                    // 用药时机选择（餐前 / 餐中 / 餐后，睡前时段隐藏无意义时机）
+                                    if (selectedPeriod != MealPeriod.NIGHT) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "时机:",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            val timingList = listOf("餐前", "餐中", "餐后")
+                                            timingList.forEach { timing ->
+                                                val isTimingSelected = currentMedTiming == timing
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (isTimingSelected) TealPrimary.copy(alpha = 0.15f)
+                                                           else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                                    border = BorderStroke(
+                                                        width = if (isTimingSelected) 1.dp else 0.5.dp,
+                                                        color = if (isTimingSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                                    ),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable { onMedTimingChange(timing) }
+                                                        .testTag("med_timing_$timing")
                                                 ) {
-                                                    Text(
-                                                        text = timing,
-                                                        fontSize = 11.5.sp,
-                                                        fontWeight = if (isTimingSelected) FontWeight.Bold else FontWeight.Medium,
-                                                        color = if (isTimingSelected) TealPrimary else MaterialTheme.colorScheme.onSurface
-                                                    )
+                                                    Box(
+                                                        modifier = Modifier.padding(vertical = 5.5.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = timing,
+                                                            fontSize = 11.5.sp,
+                                                            fontWeight = if (isTimingSelected) FontWeight.Bold else FontWeight.Medium,
+                                                            color = if (isTimingSelected) TealPrimary else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1375,7 +1377,7 @@ fun RecordEditDialog(
                                                 postNightBG = postNightBG.toFloatOrNull(),
                                                 nightMedName = nightMedName.trim(),
                                                 bedtimeInsulin = bedtimeInsulin.toFloatOrNull(),
-                                                nightMedTiming = nightMedTiming.trim().ifBlank { "餐前" },
+                                                nightMedTiming = "睡前",
                                                 nightDiet = nightDiet.trim(),
                                                 nightExercise = nightExercise.trim(),
                                                 notes = notes.trim()

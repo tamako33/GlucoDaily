@@ -763,7 +763,9 @@ fun RecordTable(
                                                 val doseStr = if (record.bedtimeInsulin % 1f == 0f) "${record.bedtimeInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.bedtimeInsulin)}$unit"
                                                 val medDesc = buildString {
                                                     if (record.nightMedName.isNotBlank()) append(record.nightMedName) else append("睡前用药")
-                                                    if (record.nightMedTiming.isNotBlank()) append(" · ${record.nightMedTiming}")
+                                                    if (record.nightMedTiming.isNotBlank() && record.nightMedTiming != "餐前" && record.nightMedTiming != "睡前") {
+                                                        append(" · ${record.nightMedTiming}")
+                                                    }
                                                 }
                                                 zoomDetail = CellZoomDetail(
                                                     title = "🛌 睡前 · 用药",
@@ -1053,7 +1055,7 @@ private fun TableMedicationCell(
                     color = fg,
                     textAlign = TextAlign.Center
                 )
-                val subText = if (medTiming.isNotBlank() && medTiming != "餐前") {
+                val subText = if (!isBedtime && medTiming.isNotBlank() && medTiming != "餐前") {
                     if (shortName.isNotBlank()) "$shortName·$medTiming" else medTiming
                 } else {
                     shortName

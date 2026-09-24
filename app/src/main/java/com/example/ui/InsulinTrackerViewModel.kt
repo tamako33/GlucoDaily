@@ -278,7 +278,7 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                 ItemType.MEDICATION -> {
                     if (dose != null && dose > 0) {
                         val actualName = medName.trim().ifBlank { "胰岛素" }
-                        val actualTiming = medTiming.trim().ifBlank { if (period == MealPeriod.NIGHT) "睡前" else "餐前" }
+                        val actualTiming = if (period == MealPeriod.NIGHT) "睡前" else medTiming.trim().ifBlank { "餐前" }
                         val base = when (period) {
                             MealPeriod.MORNING -> existing.copy(
                                 bfMedName = actualName,
