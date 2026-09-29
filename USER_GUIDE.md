@@ -319,10 +319,10 @@ GlucoDaily 内置了 **系统级高品质 TTS 语音朗读引擎**：
 > **排查方法**：
 > **完全不需要！所有功能终身免费且全离线可用**。我们采用开放的 Apache-2.0 开源协议，不含任何隐藏收费代码。
 
-#### Q5: 如果自己从源码编译，离线语音模型放在哪里？
+#### Q5: 源码里的离线语音识别模型需要额外手动下载吗？
 > **解答**：
-> 1. **普通用户**：直接前往 GitHub Releases 下载已打包内置完整模型的 `GlucoDaily_TangShuXin_v1.0.apk` 即可，开箱即用，无需任何额外配置；
-> 2. **开发者**：从源码克隆后，只需将 `model.int8.onnx`（约 228MB）放入工程中的 `app/src/main/assets/sense-voice/model.int8.onnx` 目录即可，详细一键下载脚本请参考项目根目录 `README.md`。
+> 1. **全量代码仓库**：本项目已通过 Git LFS 完整托管了 SenseVoice 离线模型，只要克隆时执行 `git clone` 或 `git lfs pull`，模型已自动包含在本地工程中，开箱即用，无需任何额外配置；
+> 2. **普通用户**：直接前往 GitHub Releases 下载已打包内置完整模型的 `GlucoDaily_TangShuXin_v1.0.apk` 即可，在手机上一键安装直接体验。
 
 ---
 

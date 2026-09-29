@@ -274,42 +274,39 @@ app/src/main/java/com/example/
 
 ---
 
-### 🛠️ 源码编译与离线模型配置（开发者）
+### 🛠️ 源码编译与 Git LFS 离线模型（开发者）
 
-为保持 Git 代码仓库轻量化（仅 ~15MB，免除克隆漫长等待），端侧离线语音模型文件（`model.int8.onnx`，约 228MB）未直接提交至 Git 历史，需在克隆后放入对应目录。
+本项目采用 **Git LFS (Large File Storage)** 进行了全量端到端托管，端侧离线语音模型（`model.int8.onnx`，约 228MB）已**完全包含在仓库中**，实现 100% 开箱即用！
 
-#### 1. 离线语音模型目录结构说明
+#### 1. 克隆与模型自动拉取
 
-模型必须放置在以下相对路径（`tokens.txt` 仓库中已自带）：
+在克隆仓库时，Git LFS 会自动下载离线模型文件；若本地未安装 LFS，也可随时手动拉取：
+
+```bash
+# 确保已安装 git-lfs（绝大多数 Git 安装包已默认内置）
+git lfs install
+
+# 克隆仓库（模型将自动随代码一并拉取到位）
+git clone https://github.com/tamako33/GlucoDaily.git
+cd GlucoDaily
+
+# 如果之前克隆时未下载大文件，可手动执行：
+git lfs pull
+```
+
+#### 2. 离线语音模型目录结构
+
+拉取完成后，模型文件已自动就绪于如下路径：
 
 ```text
 app/src/main/assets/sense-voice/
-├── tokens.txt             ✅ (仓库源码中已自带，约 316KB)
-└── model.int8.onnx        ⬇️ (需下载并放置在此，约 228MB)
+├── tokens.txt             ✅ (词表文件，约 316KB)
+└── model.int8.onnx        ✅ (SenseVoice-Small INT8 量化模型，约 228MB)
 ```
 
-#### 2. 模型下载途径（任选其一）
-
-- **途径一（最推荐）**：直接从本项目的 **[GitHub Releases v1.0 附件](https://github.com/tamako33/GlucoDaily/releases)** 中下载 `model.int8.onnx`；
-- **途径二（国内高速官方源）**：从阿里 ModelScope 社区下载 SenseVoice-Small int8 量化模型：  
-  👉 [ModelScope 阿里官方模型主页](https://modelscope.cn/models/damo/SenseVoiceSmall)
-- **途径三（海外源）**：从 Hugging Face 社区下载：  
-  👉 [HuggingFace Sherpa-ONNX 仓库](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17)
-
-#### 3. 一键下载与放置脚本（可直接复制运行）
-
-- **Windows (PowerShell)**：
-  ```powershell
-  # 自动创建目标目录并下载模型
-  New-Item -ItemType Directory -Force -Path "app\src\main\assets\sense-voice"
-  Invoke-WebRequest -Uri "https://github.com/tamako33/GlucoDaily/releases/download/v1.0.0/model.int8.onnx" -OutFile "app\src\main\assets\sense-voice\model.int8.onnx"
-  ```
-
-- **macOS / Linux (Bash)**：
-  ```bash
-  mkdir -p app/src/main/assets/sense-voice
-  curl -L -o app/src/main/assets/sense-voice/model.int8.onnx https://github.com/tamako33/GlucoDaily/releases/download/v1.0.0/model.int8.onnx
-  ```
+> 💡 **备用镜像源**：若因网络原因需要独立下载模型，也可从以下官方源获取同款模型放入上述目录：  
+> - **国内极速源**: [ModelScope 阿里官方模型主页](https://modelscope.cn/models/damo/SenseVoiceSmall)  
+> - **海外官方源**: [Hugging Face Sherpa-ONNX 仓库](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17)
 
 ---
 
