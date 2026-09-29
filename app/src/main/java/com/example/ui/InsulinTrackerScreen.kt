@@ -435,12 +435,38 @@ fun InsulinTrackerScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            // 关怀模式开关（适老版大字模式，位于日夜切换左侧）
-                            CareModeToggleSwitch(
-                                isCareMode = isCareMode,
-                                onToggle = { viewModel.toggleCareMode() },
-                                modifier = Modifier.testTag("care_mode_toggle_button")
-                            )
+                            // 切换至关怀版大字模式按钮
+                            Surface(
+                                shape = ApplePillShape,
+                                color = TealPrimary.copy(alpha = 0.14f),
+                                border = BorderStroke(1.2.dp, TealPrimary.copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .clip(ApplePillShape)
+                                    .clickable {
+                                        viewModel.toggleCareMode()
+                                    }
+                                    .testTag("care_mode_toggle_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Elderly,
+                                        contentDescription = "切换至关怀版",
+                                        tint = TealPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "关怀版",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TealPrimary
+                                    )
+                                }
+                            }
 
 
                             // 1. Manual Theme Switcher Button
