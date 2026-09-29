@@ -24,9 +24,9 @@ private val DarkColorScheme =
     background = DarkBackground,
     surface = DarkSurface,
     surfaceVariant = DarkSurfaceVariant,
-    onBackground = Color(0xFFF1F5F9),
-    onSurface = Color(0xFFF8FAFC),
-    onSurfaceVariant = Color(0xFF94A3B8),
+    onBackground = Color.White,
+    onSurface = Color.White,
+    onSurfaceVariant = Color(0xFF8E8E93),
     outline = DarkOutline,
     outlineVariant = DarkOutlineVariant,
     secondary = LunchColorDark,
@@ -42,11 +42,11 @@ private val LightColorScheme =
     background = MedicalBackground,
     surface = MedicalSurface,
     surfaceVariant = MedicalSurfaceVariant,
-    onBackground = Color(0xFF0F172A),
-    onSurface = Color(0xFF0F172A),
-    onSurfaceVariant = Color(0xFF64748B),
-    outline = Color(0xFFCBD5E1),
-    outlineVariant = Color(0xFFE2E8F0),
+    onBackground = AppleInk,
+    onSurface = AppleInk,
+    onSurfaceVariant = AppleInkMuted48,
+    outline = AppleHairline,
+    outlineVariant = AppleDividerSoft,
     secondary = LunchColor,
     tertiary = DinnerColor
   )
@@ -90,7 +90,7 @@ private fun ColorScheme.animated(durationMillis: Int = 300): ColorScheme {
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  // Disable dynamicColor by default to guarantee high-contrast Medical Teal branding in both themes
+  // Disable dynamicColor by default to guarantee high-contrast Apple branding in both themes
   dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {
@@ -111,4 +111,3 @@ fun MyApplicationTheme(
     MaterialTheme(colorScheme = animatedColorScheme, typography = Typography, content = content)
   }
 }
-

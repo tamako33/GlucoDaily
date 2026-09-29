@@ -79,6 +79,10 @@ object VoiceRecognitionService {
             "两粒" to "2粒",
             "三粒" to "3粒",
             "一粒" to "1粒",
+            "两颗" to "2片",
+            "三颗" to "3片",
+            "一颗" to "1片",
+            "半颗" to "0.5片",
             "两支" to "2支",
             "三支" to "3支",
             "一支" to "1支",
@@ -207,31 +211,32 @@ object VoiceRecognitionService {
             "睡前六" to "睡前6",
             "睡觉前" to "睡前",
 
-            // 饮食与餐后口语表达归一化
-            "早饭吃完后" to "早上",
-            "早饭吃完" to "早上",
-            "吃完早饭后" to "早上",
-            "吃完早饭" to "早上",
-            "午饭吃完后" to "中午",
-            "午饭吃完" to "中午",
-            "吃完午饭后" to "中午",
-            "吃完午饭" to "中午",
-            "晚饭吃完后" to "晚上",
-            "晚饭吃完" to "晚上",
-            "吃完晚饭后" to "晚上",
-            "吃完晚饭" to "晚上",
-            "吃了完饭" to "餐后",
-            "吃完了饭" to "餐后",
-            "吃完饭后" to "餐后",
-            "吃完饭" to "餐后",
-            "吃了饭后" to "餐后",
-            "吃了饭" to "餐后",
-            "吃过饭后" to "餐后",
-            "吃过饭" to "餐后",
-            "用完餐后" to "餐后",
-            "用完餐" to "餐后",
-            "用过餐后" to "餐后",
-            "用过餐" to "餐后",
+            // 饮食与用餐口语表达归一化（准确保留餐后语义：吃完午饭 -> 午餐后）
+            "早饭吃完后" to "早餐后",
+            "早饭吃完" to "早餐后",
+            "吃完早饭后" to "早餐后",
+            "吃完早饭" to "早餐后",
+            "午饭吃完后" to "午餐后",
+            "午饭吃完" to "午餐后",
+            "吃完午饭后" to "午餐后",
+            "吃完午饭" to "午餐后",
+            "晚饭吃完后" to "晚餐后",
+            "晚饭吃完" to "晚餐后",
+            "吃完晚饭后" to "晚餐后",
+            "吃完晚饭" to "晚餐后",
+            "吃了完饭" to "吃完饭",
+            "吃完了饭" to "吃完饭",
+            "吃玩饭" to "吃完饭",
+            "吃了玩饭" to "吃完饭",
+            "吃完饭后" to "吃完饭后",
+            "吃了饭后" to "吃完饭后",
+            "吃过饭后" to "吃完饭后",
+            "用完餐后" to "用完餐后",
+            "用过餐后" to "用过餐后",
+            "吃了饭" to "吃完饭",
+            "吃过饭" to "吃完饭",
+            "用完餐" to "用完餐",
+            "用过餐" to "用过餐",
             "晚餐餐后" to "晚餐后",
             "午餐餐后" to "午餐后",
             "早餐餐后" to "早餐后",
@@ -364,6 +369,10 @@ object VoiceRecognitionService {
             s = s.replace(bad, good)
         }
 
+        // 胰岛素单位U/优/油声学同音纠错
+        s = s.replace(Regex("""(?<=\d)\s*[优油由幽游]"""), "U")
+        s = s.replace(Regex("""(?<=\d)\s*个[优油由幽游]"""), "个单位")
+
         // 3. 数字与血糖用语规范化
         return VoiceRecordParser.normalizeChineseNumbers(s)
     }
@@ -371,8 +380,12 @@ object VoiceRecognitionService {
     /**
      * 本地离线解析文字
      */
-    fun parseOffline(text: String, defaultDate: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)): ParsedVoiceRecord {
+    fun parseOffline(
+        text: String,
+        defaultDate: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE),
+        userProfile: UserMedProfile? = null
+    ): ParsedVoiceRecord {
         val enhanced = enhanceOfflineTranscription(text)
-        return VoiceRecordParser.parse(enhanced, defaultDate)
+        return VoiceRecordParser.parse(enhanced, defaultDate, userProfile)
     }
 }

@@ -14,7 +14,11 @@ import com.example.data.DataBackupManager
 import com.example.data.InsulinRecord
 import com.example.data.MealPeriod
 import com.example.data.InsulinRepository
+import com.example.data.MedicationData
 import com.example.data.ParsedVoiceRecord
+import com.example.data.UserMedProfile
+import com.example.data.VoiceRecognitionManager
+import com.example.ui.components.TopTrendChartType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -31,11 +36,18 @@ import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/**
+ * 界面视图展示模式：单天卡片滑动 vs 统计图表中心 vs 多日汇总表格
+ */
 enum class ViewMode {
     CARDS,
+    STATS,
     TABLE
 }
 
+/**
+ * 表格视图日期范围筛选维度
+ */
 enum class TableDateRange(val label: String, val days: Int?) {
     DAYS_7("近7天", 7),
     DAYS_14("近14天", 14),
@@ -43,12 +55,18 @@ enum class TableDateRange(val label: String, val days: Int?) {
     ALL("全部", null)
 }
 
+/**
+ * 界面深浅色主题模式枚举
+ */
 enum class AppThemeMode(val title: String) {
     SYSTEM("跟随系统"),
     LIGHT("日间模式"),
     DARK("夜间模式")
 }
 
+/**
+ * 记一笔单条记录条目类型
+ */
 enum class ItemType(val title: String, val icon: String) {
     PRE_MEAL_BG("餐前血糖", "🩸"),
     DIET("用餐情况", "🍽️"),
@@ -57,6 +75,10 @@ enum class ItemType(val title: String, val icon: String) {
     EXERCISE("运动记录", "🏃")
 }
 
+/**
+ * 全局弹窗状态机 (DialogState)：
+ * 严格控制屏幕层同时只能激活一个核心弹窗，避免状态重叠与层级竞态。
+ */
 sealed class DialogState {
     object None : DialogState()
     data class Edit(
@@ -73,6 +95,18 @@ sealed class DialogState {
     data class ConfirmDelete(val record: InsulinRecord) : DialogState()
 }
 
+/**
+ * 血糖胰岛素应用核心业务状态机 (InsulinTrackerViewModel)：
+ *
+ * 架构职责与边界隔离：
+ * 1. 单一可信数据源 (SSOT)：通过 [InsulinRepository] 响应式连接 Room 数据库，
+ *    向上层 UI 暴露不可变 [StateFlow]（包括全量记录、筛选后记录、走势图数据、表格数据）；
+ * 2. 状态驱动分发：隔离 UI 渲染层与持久化数据层，所有写入操作均在 [Dispatchers.IO] 异步完成；
+ * 3. 跨时段/跨日期安全更新原则：
+ *    - 在 [savePeriodItems] 中执行严格的脏字段检测与局部合并更新，
+ *    - 确保记录某一時段（如早餐）数据时，绝不覆盖或影响其他时段（午餐/晚餐/睡前）的既有数据；
+ * 4. 边界契约与事件通知：通过不可重放的 [SharedFlow] 投递轻量级 UI 提示 (Toast) 与自动滚动事件 (scrollToDate)。
+ */
 class InsulinTrackerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: InsulinRepository
     private val prefs = application.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
@@ -83,6 +117,48 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         }.getOrDefault(AppThemeMode.SYSTEM)
     )
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    private val _topTrendChartType = MutableStateFlow(
+        runCatching {
+            TopTrendChartType.valueOf(prefs.getString("top_trend_chart_type", TopTrendChartType.RECENT_7D.name) ?: TopTrendChartType.RECENT_7D.name)
+        }.getOrDefault(TopTrendChartType.RECENT_7D)
+    )
+    val topTrendChartType: StateFlow<TopTrendChartType> = _topTrendChartType.asStateFlow()
+
+    fun setTopTrendChartType(type: TopTrendChartType) {
+        _topTrendChartType.value = type
+        prefs.edit().putString("top_trend_chart_type", type.name).apply()
+    }
+
+    private val _isCareMode = MutableStateFlow(
+        prefs.getBoolean("care_mode_enabled", false)
+    )
+    val isCareMode: StateFlow<Boolean> = _isCareMode.asStateFlow()
+
+    private val _careFontSize = MutableStateFlow(
+        runCatching {
+            CareFontSize.valueOf(prefs.getString("care_font_size", CareFontSize.EXTRA.name) ?: CareFontSize.EXTRA.name)
+        }.getOrDefault(CareFontSize.EXTRA)
+    )
+    val careFontSize: StateFlow<CareFontSize> = _careFontSize.asStateFlow()
+
+    fun setCareFontSize(size: CareFontSize) {
+        _careFontSize.value = size
+        prefs.edit().putString("care_font_size", size.name).apply()
+        viewModelScope.launch {
+            _toastEvent.emit("已切换至「${size.title}」")
+        }
+    }
+
+    fun toggleCareMode() {
+        val next = !_isCareMode.value
+        _isCareMode.value = next
+        prefs.edit().putBoolean("care_mode_enabled", next).apply()
+        val msg = if (next) "已开启关怀模式（大字版）" else "已退出关怀模式"
+        viewModelScope.launch {
+            _toastEvent.emit(msg)
+        }
+    }
 
     init {
         val db = AppDatabase.getDatabase(application)
@@ -95,10 +171,20 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
             val today = BGUtils.getTodayString()
             repository.ensureTodayRecord(today)
         }
+        viewModelScope.launch {
+            repository.allRecords.collect { records ->
+                val profile = MedicationData.getUserMedProfile(records)
+                VoiceRecognitionManager.setUserMedProfile(profile)
+            }
+        }
     }
 
     val allRecords: StateFlow<List<InsulinRecord>> = repository.allRecords
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val userMedProfile: StateFlow<UserMedProfile> = allRecords
+        .map { MedicationData.getUserMedProfile(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserMedProfile())
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -108,6 +194,9 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
 
     private val _tableDateRange = MutableStateFlow(TableDateRange.ALL)
     val tableDateRange: StateFlow<TableDateRange> = _tableDateRange.asStateFlow()
+
+    private val _statsDateRange = MutableStateFlow(TableDateRange.DAYS_14)
+    val statsDateRange: StateFlow<TableDateRange> = _statsDateRange.asStateFlow()
 
     private val _dialogState = MutableStateFlow<DialogState>(DialogState.None)
     val dialogState: StateFlow<DialogState> = _dialogState.asStateFlow()
@@ -146,12 +235,25 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val statsRecords: StateFlow<List<InsulinRecord>> = combine(filteredRecords, statsDateRange) { records, range ->
+        if (range.days == null) {
+            records
+        } else {
+            val cutoff = LocalDate.now().minusDays((range.days - 1).toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
+            records.filter { it.date >= cutoff }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
 
     fun setTableDateRange(range: TableDateRange) {
         _tableDateRange.value = range
+    }
+
+    fun setStatsDateRange(range: TableDateRange) {
+        _statsDateRange.value = range
     }
 
     fun setViewMode(mode: ViewMode) {
@@ -190,6 +292,246 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
 
     fun openAddDialog(date: String? = null, period: MealPeriod? = null) {
         openAddItemDialog(date, period)
+    }
+
+    /**
+     * 批量组合保存指定时段填写的多个条目（血糖、用药、饮食、运动等）
+     */
+    fun savePeriodItems(
+        date: String,
+        period: MealPeriod,
+        preBgValue: Float? = null,
+        isPreBgModified: Boolean = false,
+        dietText: String = "",
+        isDietModified: Boolean = false,
+        medName: String = "",
+        medDose: Float? = null,
+        medTiming: String = "",
+        isMedModified: Boolean = false,
+        exerciseText: String = "",
+        isExerciseModified: Boolean = false,
+        postMealEntries: List<com.example.data.PostMealEntry>? = null,
+        isPostMealModified: Boolean = false,
+        recordTime: String = "",
+        isTimeManuallyEdited: Boolean = false,
+        keepDialogOpen: Boolean = false
+    ) {
+        viewModelScope.launch {
+            val existing = allRecords.value.find { it.date == date } ?: InsulinRecord(date = date)
+            var updated = existing
+            val savedDescriptions = mutableListOf<String>()
+            val deletedDescriptions = mutableListOf<String>()
+
+            val finalRecordTime = recordTime.ifBlank {
+                val now = java.time.LocalTime.now()
+                String.format(java.util.Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
+            }
+
+            // 1. 餐前血糖
+            if (isPreBgModified) {
+                if (preBgValue != null) {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(fastingBG = preBgValue, preBfBG = preBgValue)
+                        MealPeriod.LUNCH -> updated.copy(preLunchBG = preBgValue)
+                        MealPeriod.DINNER -> updated.copy(preDinnerBG = preBgValue)
+                        MealPeriod.NIGHT -> updated.copy(preNightBG = preBgValue)
+                    }
+                    val oldTime = existing.getItemTime(period, "preBG")
+                    val targetTime = if (isTimeManuallyEdited) {
+                        finalRecordTime
+                    } else {
+                        val hasPrevBg = when (period) {
+                            MealPeriod.MORNING -> existing.fastingBG != null || existing.preBfBG != null
+                            MealPeriod.LUNCH -> existing.preLunchBG != null
+                            MealPeriod.DINNER -> existing.preDinnerBG != null
+                            MealPeriod.NIGHT -> existing.preNightBG != null
+                        }
+                        if (hasPrevBg && oldTime.isNotBlank()) oldTime else finalRecordTime
+                    }
+                    updated = base.withItemTime(period, "preBG", targetTime)
+                    savedDescriptions.add(if (period == MealPeriod.MORNING) "空腹血糖" else if (period == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖")
+                } else {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(fastingBG = null, preBfBG = null)
+                        MealPeriod.LUNCH -> updated.copy(preLunchBG = null)
+                        MealPeriod.DINNER -> updated.copy(preDinnerBG = null)
+                        MealPeriod.NIGHT -> updated.copy(preNightBG = null)
+                    }
+                    updated = base.withItemTime(period, "preBG", "")
+                    deletedDescriptions.add(if (period == MealPeriod.MORNING) "空腹血糖" else if (period == MealPeriod.NIGHT) "睡前血糖" else "餐前血糖")
+                }
+            }
+
+            // 2. 用餐情况
+            if (isDietModified) {
+                if (dietText.isNotBlank()) {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(bfDiet = dietText.trim())
+                        MealPeriod.LUNCH -> updated.copy(lunchDiet = dietText.trim())
+                        MealPeriod.DINNER -> updated.copy(dinnerDiet = dietText.trim())
+                        MealPeriod.NIGHT -> updated.copy(nightDiet = dietText.trim())
+                    }
+                    val oldTime = existing.getItemTime(period, "diet")
+                    val targetTime = if (isTimeManuallyEdited) {
+                        finalRecordTime
+                    } else {
+                        val hasPrevDiet = when (period) {
+                            MealPeriod.MORNING -> existing.bfDiet.isNotBlank()
+                            MealPeriod.LUNCH -> existing.lunchDiet.isNotBlank()
+                            MealPeriod.DINNER -> existing.dinnerDiet.isNotBlank()
+                            MealPeriod.NIGHT -> existing.nightDiet.isNotBlank()
+                        }
+                        if (hasPrevDiet && oldTime.isNotBlank()) oldTime else finalRecordTime
+                    }
+                    updated = base.withItemTime(period, "diet", targetTime)
+                    savedDescriptions.add("用餐情况")
+                } else {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(bfDiet = "")
+                        MealPeriod.LUNCH -> updated.copy(lunchDiet = "")
+                        MealPeriod.DINNER -> updated.copy(dinnerDiet = "")
+                        MealPeriod.NIGHT -> updated.copy(nightDiet = "")
+                    }
+                    updated = base.withItemTime(period, "diet", "")
+                    deletedDescriptions.add("用餐情况")
+                }
+            }
+
+            // 3. 用药
+            if (isMedModified) {
+                if (medDose != null && medDose > 0) {
+                    val actualName = medName.trim().ifBlank { "胰岛素" }
+                    val actualTiming = if (period == MealPeriod.NIGHT) "睡前" else medTiming.trim().ifBlank { "餐前" }
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(
+                            bfMedName = actualName,
+                            bfInsulin = medDose,
+                            bfMedTiming = actualTiming
+                        )
+                        MealPeriod.LUNCH -> updated.copy(
+                            lunchMedName = actualName,
+                            lunchInsulin = medDose,
+                            lunchMedTiming = actualTiming
+                        )
+                        MealPeriod.DINNER -> updated.copy(
+                            dinnerMedName = actualName,
+                            dinnerInsulin = medDose,
+                            dinnerMedTiming = actualTiming
+                        )
+                        MealPeriod.NIGHT -> updated.copy(
+                            nightMedName = actualName,
+                            bedtimeInsulin = medDose,
+                            nightMedTiming = actualTiming
+                        )
+                    }
+                    val oldTime = existing.getItemTime(period, "med")
+                    val targetTime = if (isTimeManuallyEdited) {
+                        finalRecordTime
+                    } else {
+                        val hasPrevMed = when (period) {
+                            MealPeriod.MORNING -> existing.bfInsulin != null && existing.bfInsulin > 0f
+                            MealPeriod.LUNCH -> existing.lunchInsulin != null && existing.lunchInsulin > 0f
+                            MealPeriod.DINNER -> existing.dinnerInsulin != null && existing.dinnerInsulin > 0f
+                            MealPeriod.NIGHT -> existing.bedtimeInsulin != null && existing.bedtimeInsulin > 0f
+                        }
+                        if (hasPrevMed && oldTime.isNotBlank()) oldTime else finalRecordTime
+                    }
+                    updated = base.withItemTime(period, "med", targetTime)
+                    savedDescriptions.add("用药")
+                } else {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(bfMedName = "", bfInsulin = null, bfMedTiming = "")
+                        MealPeriod.LUNCH -> updated.copy(lunchMedName = "", lunchInsulin = null, lunchMedTiming = "")
+                        MealPeriod.DINNER -> updated.copy(dinnerMedName = "", dinnerInsulin = null, dinnerMedTiming = "")
+                        MealPeriod.NIGHT -> updated.copy(nightMedName = "", bedtimeInsulin = null, nightMedTiming = "")
+                    }
+                    updated = base.withItemTime(period, "med", "")
+                    deletedDescriptions.add("用药")
+                }
+            }
+
+            // 4. 运动
+            if (isExerciseModified) {
+                if (exerciseText.isNotBlank()) {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(bfExercise = exerciseText.trim())
+                        MealPeriod.LUNCH -> updated.copy(lunchExercise = exerciseText.trim())
+                        MealPeriod.DINNER -> updated.copy(dinnerExercise = exerciseText.trim())
+                        MealPeriod.NIGHT -> updated.copy(nightExercise = exerciseText.trim())
+                    }
+                    val oldTime = existing.getItemTime(period, "exercise")
+                    val targetTime = if (isTimeManuallyEdited) {
+                        finalRecordTime
+                    } else {
+                        val hasPrevEx = when (period) {
+                            MealPeriod.MORNING -> existing.bfExercise.isNotBlank()
+                            MealPeriod.LUNCH -> existing.lunchExercise.isNotBlank()
+                            MealPeriod.DINNER -> existing.dinnerExercise.isNotBlank()
+                            MealPeriod.NIGHT -> existing.nightExercise.isNotBlank()
+                        }
+                        if (hasPrevEx && oldTime.isNotBlank()) oldTime else finalRecordTime
+                    }
+                    updated = base.withItemTime(period, "exercise", targetTime)
+                    savedDescriptions.add("运动记录")
+                } else {
+                    val base = when (period) {
+                        MealPeriod.MORNING -> updated.copy(bfExercise = "")
+                        MealPeriod.LUNCH -> updated.copy(lunchExercise = "")
+                        MealPeriod.DINNER -> updated.copy(dinnerExercise = "")
+                        MealPeriod.NIGHT -> updated.copy(nightExercise = "")
+                    }
+                    updated = base.withItemTime(period, "exercise", "")
+                    deletedDescriptions.add("运动记录")
+                }
+            }
+
+            // 5. 餐后血糖
+            if (isPostMealModified && postMealEntries != null) {
+                val sortedList = postMealEntries.sortedWith { a, b ->
+                    fun parseHour(tag: String): Float {
+                        if (tag.contains("半小时") || tag.contains("0.5")) return 0.5f
+                        val m = Regex("""^餐后(\d+(?:\.\d+)?)(?:小时|h)$""").find(tag.trim())
+                        if (m != null) return m.groupValues[1].toFloatOrNull() ?: 2.0f
+                        return 99f
+                    }
+                    val hA = parseHour(a.tag)
+                    val hB = parseHour(b.tag)
+                    if (hA != hB) hA.compareTo(hB) else a.time.compareTo(b.time)
+                }
+                val newPrimary = sortedList.firstOrNull()?.value
+                val serializedExtras = if (sortedList.isEmpty()) "" else com.example.data.PostMealUtils.serializeEntries(sortedList)
+                updated = when (period) {
+                    MealPeriod.MORNING -> updated.copy(postBfBG = newPrimary, postBfBGExtra = serializedExtras)
+                    MealPeriod.LUNCH -> updated.copy(postLunchBG = newPrimary, postLunchBGExtra = serializedExtras)
+                    MealPeriod.DINNER -> updated.copy(postDinnerBG = newPrimary, postDinnerBGExtra = serializedExtras)
+                    MealPeriod.NIGHT -> updated.copy(postNightBG = newPrimary, postNightBGExtra = serializedExtras)
+                }
+                if (sortedList.isNotEmpty()) {
+                    savedDescriptions.add("餐后血糖")
+                } else if (existing.getPostMealList(period).isNotEmpty()) {
+                    deletedDescriptions.add("餐后血糖")
+                }
+            }
+
+            if (updated == existing) {
+                if (!keepDialogOpen) {
+                    dismissDialog()
+                }
+                return@launch
+            }
+
+            repository.insertRecord(updated)
+            val msg = when {
+                savedDescriptions.isNotEmpty() -> "已保存「${period.title} · ${savedDescriptions.joinToString("、")}」"
+                deletedDescriptions.isNotEmpty() -> "已删除「${period.title} · ${deletedDescriptions.joinToString("、")}」"
+                else -> "已更新「${period.title}」记录"
+            }
+            _toastEvent.emit(msg)
+            _scrollToDateEvent.emit(date)
+            if (!keepDialogOpen) {
+                dismissDialog()
+            }
+        }
     }
 
     fun saveSingleItem(

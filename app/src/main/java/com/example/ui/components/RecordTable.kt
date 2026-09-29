@@ -73,17 +73,17 @@ fun RecordTable(
     // 单元格长按放大弹窗状态
     var zoomDetail by remember { mutableStateOf<CellZoomDetail?>(null) }
     // 根据用户实际的用药记录推断各餐段用药列标题和单位（优先从当前表格记录获取最新选择的用药，保证即时响应用户选择）
-    val latestBfMed = records.firstOrNull { it.bfMedName.isNotBlank() }?.bfMedName
-        ?: allRecords.firstOrNull { it.bfMedName.isNotBlank() }?.bfMedName
+    val latestBfMed = records.firstOrNull { it.bfInsulin != null && it.bfInsulin > 0 && it.bfMedName.isNotBlank() }?.bfMedName
+        ?: allRecords.firstOrNull { it.bfInsulin != null && it.bfInsulin > 0 && it.bfMedName.isNotBlank() }?.bfMedName
         ?: "胰岛素"
-    val latestLunchMed = records.firstOrNull { it.lunchMedName.isNotBlank() }?.lunchMedName
-        ?: allRecords.firstOrNull { it.lunchMedName.isNotBlank() }?.lunchMedName
+    val latestLunchMed = records.firstOrNull { it.lunchInsulin != null && it.lunchInsulin > 0 && it.lunchMedName.isNotBlank() }?.lunchMedName
+        ?: allRecords.firstOrNull { it.lunchInsulin != null && it.lunchInsulin > 0 && it.lunchMedName.isNotBlank() }?.lunchMedName
         ?: "胰岛素"
-    val latestDinnerMed = records.firstOrNull { it.dinnerMedName.isNotBlank() }?.dinnerMedName
-        ?: allRecords.firstOrNull { it.dinnerMedName.isNotBlank() }?.dinnerMedName
+    val latestDinnerMed = records.firstOrNull { it.dinnerInsulin != null && it.dinnerInsulin > 0 && it.dinnerMedName.isNotBlank() }?.dinnerMedName
+        ?: allRecords.firstOrNull { it.dinnerInsulin != null && it.dinnerInsulin > 0 && it.dinnerMedName.isNotBlank() }?.dinnerMedName
         ?: "胰岛素"
-    val latestNightMed = records.firstOrNull { it.nightMedName.isNotBlank() }?.nightMedName
-        ?: allRecords.firstOrNull { it.nightMedName.isNotBlank() }?.nightMedName
+    val latestNightMed = records.firstOrNull { it.bedtimeInsulin != null && it.bedtimeInsulin > 0 && it.nightMedName.isNotBlank() }?.nightMedName
+        ?: allRecords.firstOrNull { it.bedtimeInsulin != null && it.bedtimeInsulin > 0 && it.nightMedName.isNotBlank() }?.nightMedName
         ?: "胰岛素"
 
     val bfColTitle = MedicationData.getColumnHeaderTitle(latestBfMed)
@@ -103,6 +103,69 @@ fun RecordTable(
     // 缩放系数约束在合理范围（0.75x ~ 2.5x）
     val s = zoomScale.coerceIn(0.75f, 2.5f)
 
+    // 数据列动态存在性检测：如果整列没有任何数据，则默认隐藏该列，避免占用宝贵显示空间
+    val hasPrevNight = remember(records, allRecords) {
+        records.any { r ->
+            val pn = BGUtils.getPrevNightInsulin(r.date, allRecords)
+            pn != null && pn.dose > 0
+        }
+    }
+    val hasFasting = remember(records) {
+        records.any { it.fastingBG != null || it.preBfBG != null }
+    }
+    val hasBfMed = remember(records) {
+        records.any { it.bfInsulin != null && it.bfInsulin > 0 }
+    }
+    val hasPostBf = remember(records) {
+        records.any { it.postBfBG != null || it.getPostMealList(MealPeriod.MORNING).isNotEmpty() }
+    }
+    val hasBfDiet = isEnlarged && remember(records) {
+        records.any { it.bfDiet.isNotBlank() }
+    }
+
+    val hasPreLunch = isEnlarged && remember(records) {
+        records.any { it.preLunchBG != null }
+    }
+    val hasLunchMed = remember(records) {
+        records.any { it.lunchInsulin != null && it.lunchInsulin > 0 }
+    }
+    val hasPostLunch = remember(records) {
+        records.any { it.postLunchBG != null || it.getPostMealList(MealPeriod.LUNCH).isNotEmpty() }
+    }
+    val hasLunchDiet = isEnlarged && remember(records) {
+        records.any { it.lunchDiet.isNotBlank() }
+    }
+
+    val hasPreDinner = isEnlarged && remember(records) {
+        records.any { it.preDinnerBG != null }
+    }
+    val hasDinnerMed = remember(records) {
+        records.any { it.dinnerInsulin != null && it.dinnerInsulin > 0 }
+    }
+    val hasPostDinner = remember(records) {
+        records.any { it.postDinnerBG != null || it.getPostMealList(MealPeriod.DINNER).isNotEmpty() }
+    }
+    val hasDinnerDiet = isEnlarged && remember(records) {
+        records.any { it.dinnerDiet.isNotBlank() }
+    }
+
+    val hasPreNight = isEnlarged && remember(records) {
+        records.any { it.preNightBG != null }
+    }
+    val hasBedtimeMed = remember(records) {
+        records.any { it.bedtimeInsulin != null && it.bedtimeInsulin > 0 }
+    }
+    val hasNightDiet = isEnlarged && remember(records) {
+        records.any { it.nightDiet.isNotBlank() }
+    }
+
+    val hasTotalInsulin = remember(records) {
+        records.any { it.totalInsulin > 0 }
+    }
+    val hasNotes = remember(records) {
+        records.any { it.notes.isNotBlank() }
+    }
+
     // 列宽定义：针对明细模式展示全部列，结合双指缩放系数动态自适应
     val dateColWidth: Dp = ((if (isEnlarged) 96f else 88f) * s).dp
 
@@ -112,43 +175,39 @@ fun RecordTable(
     val bfMedWidth: Dp = ((if (isEnlarged) 82f else 78f) * s).dp
     val postBfWidth: Dp = ((if (isEnlarged) 78f else 76f) * s).dp
     val bfDietWidth: Dp = (105f * s).dp
-    val bfGroupTotalWidth = if (isEnlarged) {
-        prevNightWidth + fastingWidth + bfMedWidth + postBfWidth + bfDietWidth
-    } else {
-        prevNightWidth + fastingWidth + bfMedWidth + postBfWidth
-    }
+    val bfGroupTotalWidth = (if (hasPrevNight) prevNightWidth else 0.dp) +
+        (if (hasFasting) fastingWidth else 0.dp) +
+        (if (hasBfMed) bfMedWidth else 0.dp) +
+        (if (hasPostBf) postBfWidth else 0.dp) +
+        (if (hasBfDiet) bfDietWidth else 0.dp)
 
     // 午餐段列宽
     val preLunchWidth: Dp = (78f * s).dp
     val lunchMedWidth: Dp = ((if (isEnlarged) 82f else 78f) * s).dp
     val postLunchWidth: Dp = ((if (isEnlarged) 78f else 78f) * s).dp
     val lunchDietWidth: Dp = (105f * s).dp
-    val lunchGroupTotalWidth = if (isEnlarged) {
-        preLunchWidth + lunchMedWidth + postLunchWidth + lunchDietWidth
-    } else {
-        lunchMedWidth + postLunchWidth
-    }
+    val lunchGroupTotalWidth = (if (hasPreLunch) preLunchWidth else 0.dp) +
+        (if (hasLunchMed) lunchMedWidth else 0.dp) +
+        (if (hasPostLunch) postLunchWidth else 0.dp) +
+        (if (hasLunchDiet) lunchDietWidth else 0.dp)
 
     // 晚餐段列宽
     val preDinnerWidth: Dp = (78f * s).dp
     val dinnerMedWidth: Dp = ((if (isEnlarged) 82f else 78f) * s).dp
     val postDinnerWidth: Dp = ((if (isEnlarged) 78f else 78f) * s).dp
     val dinnerDietWidth: Dp = (105f * s).dp
-    val dinnerGroupTotalWidth = if (isEnlarged) {
-        preDinnerWidth + dinnerMedWidth + postDinnerWidth + dinnerDietWidth
-    } else {
-        dinnerMedWidth + postDinnerWidth
-    }
+    val dinnerGroupTotalWidth = (if (hasPreDinner) preDinnerWidth else 0.dp) +
+        (if (hasDinnerMed) dinnerMedWidth else 0.dp) +
+        (if (hasPostDinner) postDinnerWidth else 0.dp) +
+        (if (hasDinnerDiet) dinnerDietWidth else 0.dp)
 
     // 睡前段列宽
     val preNightWidth: Dp = (78f * s).dp
     val bedtimeMedWidth: Dp = ((if (isEnlarged) 82f else 80f) * s).dp
     val nightDietWidth: Dp = (95f * s).dp
-    val bedtimeGroupTotalWidth = if (isEnlarged) {
-        preNightWidth + bedtimeMedWidth + nightDietWidth
-    } else {
-        bedtimeMedWidth
-    }
+    val bedtimeGroupTotalWidth = (if (hasPreNight) preNightWidth else 0.dp) +
+        (if (hasBedtimeMed) bedtimeMedWidth else 0.dp) +
+        (if (hasNightDiet) nightDietWidth else 0.dp)
 
     // 统计与操作
     val totalInsulinWidth: Dp = ((if (isEnlarged) 80f else 74f) * s).dp
@@ -215,12 +274,24 @@ fun RecordTable(
                         ) {
                             // Row 1: Period Categories
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                TableHeaderCell("🌅 早餐", bfGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.breakfastColor, bgColor = AppThemeColors.breakfastHeaderBg)
-                                TableHeaderCell("☀️ 午餐", lunchGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.lunchColor, bgColor = AppThemeColors.lunchHeaderBg)
-                                TableHeaderCell("🌙 晚餐", dinnerGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.dinnerColor, bgColor = AppThemeColors.dinnerHeaderBg)
-                                TableHeaderCell("🛌 睡前", bedtimeGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.bedtimeColor, bgColor = AppThemeColors.bedtimeHeaderBg)
-                                TableHeaderCell("总剂量", totalInsulinWidth, fontSize = headerFontSize, color = TealPrimary, bgColor = TealPrimary.copy(alpha = 0.15f))
-                                TableHeaderCell("备注", notesWidth, fontSize = headerFontSize, color = MaterialTheme.colorScheme.onSurfaceVariant, bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                if (bfGroupTotalWidth > 0.dp) {
+                                    TableHeaderCell("🌅 早餐", bfGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.breakfastColor, bgColor = AppThemeColors.breakfastHeaderBg)
+                                }
+                                if (lunchGroupTotalWidth > 0.dp) {
+                                    TableHeaderCell("☀️ 午餐", lunchGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.lunchColor, bgColor = AppThemeColors.lunchHeaderBg)
+                                }
+                                if (dinnerGroupTotalWidth > 0.dp) {
+                                    TableHeaderCell("🌙 晚餐", dinnerGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.dinnerColor, bgColor = AppThemeColors.dinnerHeaderBg)
+                                }
+                                if (bedtimeGroupTotalWidth > 0.dp) {
+                                    TableHeaderCell("🛌 睡前", bedtimeGroupTotalWidth, fontSize = headerFontSize, color = AppThemeColors.bedtimeColor, bgColor = AppThemeColors.bedtimeHeaderBg)
+                                }
+                                if (hasTotalInsulin) {
+                                    TableHeaderCell("总剂量", totalInsulinWidth, fontSize = headerFontSize, color = TealPrimary, bgColor = TealPrimary.copy(alpha = 0.15f))
+                                }
+                                if (hasNotes) {
+                                    TableHeaderCell("备注", notesWidth, fontSize = headerFontSize, color = MaterialTheme.colorScheme.onSurfaceVariant, bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                }
                                 TableHeaderCell("操作", actionsWidth, fontSize = headerFontSize, color = MaterialTheme.colorScheme.onSurfaceVariant, bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                             }
 
@@ -232,46 +303,32 @@ fun RecordTable(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 // 早餐子项
-                                TableSubHeaderCell("昨睡前", prevNightWidth, fontSize = subHeaderFontSize)
-                                TableSubHeaderCell("空腹", fastingWidth, fontSize = subHeaderFontSize)
-                                TableSubHeaderCell(bfColTitle, bfMedWidth, fontSize = subHeaderFontSize)
-                                TableSubHeaderCell("餐后2h", postBfWidth, fontSize = subHeaderFontSize)
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("饮食", bfDietWidth, fontSize = subHeaderFontSize)
-                                }
+                                if (hasPrevNight) TableSubHeaderCell("昨睡前", prevNightWidth, fontSize = subHeaderFontSize)
+                                if (hasFasting) TableSubHeaderCell("空腹", fastingWidth, fontSize = subHeaderFontSize)
+                                if (hasBfMed) TableSubHeaderCell(bfColTitle, bfMedWidth, fontSize = subHeaderFontSize)
+                                if (hasPostBf) TableSubHeaderCell("餐后2h", postBfWidth, fontSize = subHeaderFontSize)
+                                if (hasBfDiet) TableSubHeaderCell("饮食", bfDietWidth, fontSize = subHeaderFontSize)
 
                                 // 午餐子项
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("餐前", preLunchWidth, fontSize = subHeaderFontSize)
-                                }
-                                TableSubHeaderCell(lunchColTitle, lunchMedWidth, fontSize = subHeaderFontSize)
-                                TableSubHeaderCell("餐后2h", postLunchWidth, fontSize = subHeaderFontSize)
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("饮食", lunchDietWidth, fontSize = subHeaderFontSize)
-                                }
+                                if (hasPreLunch) TableSubHeaderCell("餐前", preLunchWidth, fontSize = subHeaderFontSize)
+                                if (hasLunchMed) TableSubHeaderCell(lunchColTitle, lunchMedWidth, fontSize = subHeaderFontSize)
+                                if (hasPostLunch) TableSubHeaderCell("餐后2h", postLunchWidth, fontSize = subHeaderFontSize)
+                                if (hasLunchDiet) TableSubHeaderCell("饮食", lunchDietWidth, fontSize = subHeaderFontSize)
 
                                 // 晚餐子项
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("餐前", preDinnerWidth, fontSize = subHeaderFontSize)
-                                }
-                                TableSubHeaderCell(dinnerColTitle, dinnerMedWidth, fontSize = subHeaderFontSize)
-                                TableSubHeaderCell("餐后2h", postDinnerWidth, fontSize = subHeaderFontSize)
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("饮食", dinnerDietWidth, fontSize = subHeaderFontSize)
-                                }
+                                if (hasPreDinner) TableSubHeaderCell("餐前", preDinnerWidth, fontSize = subHeaderFontSize)
+                                if (hasDinnerMed) TableSubHeaderCell(dinnerColTitle, dinnerMedWidth, fontSize = subHeaderFontSize)
+                                if (hasPostDinner) TableSubHeaderCell("餐后2h", postDinnerWidth, fontSize = subHeaderFontSize)
+                                if (hasDinnerDiet) TableSubHeaderCell("饮食", dinnerDietWidth, fontSize = subHeaderFontSize)
 
                                 // 睡前子项
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("睡前", preNightWidth, fontSize = subHeaderFontSize)
-                                }
-                                TableSubHeaderCell(bedtimeColTitle, bedtimeMedWidth, fontSize = subHeaderFontSize)
-                                if (isEnlarged) {
-                                    TableSubHeaderCell("加餐", nightDietWidth, fontSize = subHeaderFontSize)
-                                }
+                                if (hasPreNight) TableSubHeaderCell("睡前", preNightWidth, fontSize = subHeaderFontSize)
+                                if (hasBedtimeMed) TableSubHeaderCell(bedtimeColTitle, bedtimeMedWidth, fontSize = subHeaderFontSize)
+                                if (hasNightDiet) TableSubHeaderCell("加餐", nightDietWidth, fontSize = subHeaderFontSize)
 
                                 // 总剂量, 备注, 操作
-                                TableSubHeaderCell("U", totalInsulinWidth, fontSize = subHeaderFontSize)
-                                TableSubHeaderCell("", notesWidth, fontSize = subHeaderFontSize)
+                                if (hasTotalInsulin) TableSubHeaderCell("U", totalInsulinWidth, fontSize = subHeaderFontSize)
+                                if (hasNotes) TableSubHeaderCell("", notesWidth, fontSize = subHeaderFontSize)
                                 TableSubHeaderCell("", actionsWidth, fontSize = subHeaderFontSize)
                             }
                         }
@@ -368,115 +425,123 @@ fun RecordTable(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     // --- 🌅 早餐段数据 ---
-                                    TablePrevNightCell(
-                                        prevNight = prevNight,
-                                        width = prevNightWidth,
-                                        fontSize = dataFontSize,
-                                        onLongClick = if (prevNight != null && prevNight.dose > 0) {
-                                            {
-                                                val unit = MedicationData.detectUnit(prevNight.medName)
-                                                val doseStr = if (prevNight.dose % 1f == 0f) "${prevNight.dose.toInt()}$unit" else "${prevNight.dose}$unit"
-                                                val medDesc = if (prevNight.medName.isNotBlank()) prevNight.medName else "前晚睡前胰岛素"
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🛌 前晚 · 睡前用药",
-                                                    date = record.date,
-                                                    mainText = doseStr,
-                                                    subText = "$medDesc · 用于评估空腹基础血糖",
-                                                    highlightColor = cBedtimeColor
-                                                )
+                                    if (hasPrevNight) {
+                                        TablePrevNightCell(
+                                            prevNight = prevNight,
+                                            width = prevNightWidth,
+                                            fontSize = dataFontSize,
+                                            onLongClick = if (prevNight != null && prevNight.dose > 0) {
+                                                {
+                                                    val unit = MedicationData.detectUnit(prevNight.medName)
+                                                    val doseStr = if (prevNight.dose % 1f == 0f) "${prevNight.dose.toInt()}$unit" else "${prevNight.dose}$unit"
+                                                    val medDesc = if (prevNight.medName.isNotBlank()) prevNight.medName else "前晚睡前胰岛素"
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🛌 前晚 · 睡前用药",
+                                                        date = record.date,
+                                                        mainText = doseStr,
+                                                        subText = "$medDesc · 用于评估空腹基础血糖",
+                                                        highlightColor = cBedtimeColor
+                                                    )
+                                                }
+                                            } else null
+                                        )
+                                    }
+                                    if (hasFasting) {
+                                        TableBGCellContainer(
+                                            bg = record.fastingBG ?: record.preBfBG,
+                                            width = fastingWidth,
+                                            isFasting = true,
+                                            fontSize = dataFontSize,
+                                            onLongClick = (record.fastingBG ?: record.preBfBG)?.let { bgVal ->
+                                                {
+                                                    val status = BGUtils.evaluateFasting(bgVal)
+                                                    val levelDesc = when (status?.level) {
+                                                        BGLevel.LOW -> "⚠️ 偏低 (空腹参考标准: 3.9 ~ 6.1 mmol/L)"
+                                                        BGLevel.HIGH -> "⚠️ 偏高 (空腹参考标准: 3.9 ~ 6.1 mmol/L)"
+                                                        BGLevel.NORMAL -> "✅ 正常理想范围 (3.9 ~ 6.1 mmol/L)"
+                                                        null -> ""
+                                                    }
+                                                    val fgColor = when (status?.level) {
+                                                        BGLevel.LOW -> cGlucoseLow
+                                                        BGLevel.NORMAL -> cGlucoseNormal
+                                                        BGLevel.HIGH -> cGlucoseHigh
+                                                        null -> TealPrimary
+                                                    }
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🌅 早餐 · 空腹血糖",
+                                                        date = record.date,
+                                                        mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
+                                                        subText = levelDesc,
+                                                        highlightColor = fgColor
+                                                    )
+                                                }
                                             }
-                                        } else null
-                                    )
-                                    TableBGCellContainer(
-                                        bg = record.fastingBG ?: record.preBfBG,
-                                        width = fastingWidth,
-                                        isFasting = true,
-                                        fontSize = dataFontSize,
-                                        onLongClick = (record.fastingBG ?: record.preBfBG)?.let { bgVal ->
-                                            {
-                                                val status = BGUtils.evaluateFasting(bgVal)
-                                                val levelDesc = when (status?.level) {
-                                                    BGLevel.LOW -> "⚠️ 偏低 (空腹参考标准: 3.9 ~ 6.1 mmol/L)"
-                                                    BGLevel.HIGH -> "⚠️ 偏高 (空腹参考标准: 3.9 ~ 6.1 mmol/L)"
-                                                    BGLevel.NORMAL -> "✅ 正常理想范围 (3.9 ~ 6.1 mmol/L)"
-                                                    null -> ""
+                                        )
+                                    }
+                                    if (hasBfMed) {
+                                        TableMedicationCell(
+                                            dose = record.bfInsulin,
+                                            medName = record.bfMedName,
+                                            width = bfMedWidth,
+                                            medTiming = record.bfMedTiming,
+                                            fontSize = dataFontSize,
+                                            onLongClick = if (record.bfInsulin != null && record.bfInsulin > 0) {
+                                                {
+                                                    val unit = MedicationData.detectUnit(record.bfMedName)
+                                                    val doseStr = if (record.bfInsulin % 1f == 0f) "${record.bfInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.bfInsulin)}$unit"
+                                                    val medDesc = buildString {
+                                                        if (record.bfMedName.isNotBlank()) append(record.bfMedName) else append("早餐用药")
+                                                        if (record.bfMedTiming.isNotBlank()) append(" · ${record.bfMedTiming}")
+                                                    }
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🌅 早餐 · 用药",
+                                                        date = record.date,
+                                                        mainText = doseStr,
+                                                        subText = medDesc,
+                                                        highlightColor = TealPrimary
+                                                    )
                                                 }
-                                                val fgColor = when (status?.level) {
-                                                    BGLevel.LOW -> cGlucoseLow
-                                                    BGLevel.NORMAL -> cGlucoseNormal
-                                                    BGLevel.HIGH -> cGlucoseHigh
-                                                    null -> TealPrimary
+                                            } else null
+                                        )
+                                    }
+                                    if (hasPostBf) {
+                                        val bfPosts = record.getPostMealList(MealPeriod.MORNING)
+                                        TableBGCellContainer(
+                                            bg = record.postBfBG,
+                                            width = postBfWidth,
+                                            isFasting = false,
+                                            fontSize = dataFontSize,
+                                            extraCount = (bfPosts.size - 1).coerceAtLeast(0),
+                                            onLongClick = record.postBfBG?.let { bgVal ->
+                                                {
+                                                    val status = BGUtils.evaluatePostMeal(bgVal)
+                                                    val levelDesc = when (status?.level) {
+                                                        BGLevel.LOW -> "⚠️ 偏低 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
+                                                        BGLevel.HIGH -> "⚠️ 偏高 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
+                                                        BGLevel.NORMAL -> "✅ 正常理想范围 (4.4 ~ 7.8 mmol/L)"
+                                                        null -> ""
+                                                    }
+                                                    val fgColor = when (status?.level) {
+                                                        BGLevel.LOW -> cGlucoseLow
+                                                        BGLevel.NORMAL -> cGlucoseNormal
+                                                        BGLevel.HIGH -> cGlucoseHigh
+                                                        null -> TealPrimary
+                                                    }
+                                                    val extraDetail = if (bfPosts.size > 1) {
+                                                        "\n" + bfPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
+                                                    } else ""
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🌅 早餐 · 餐后血糖",
+                                                        date = record.date,
+                                                        mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
+                                                        subText = levelDesc + extraDetail,
+                                                        highlightColor = fgColor
+                                                    )
                                                 }
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🌅 早餐 · 空腹血糖",
-                                                    date = record.date,
-                                                    mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc,
-                                                    highlightColor = fgColor
-                                                )
                                             }
-                                        }
-                                    )
-                                    TableMedicationCell(
-                                        dose = record.bfInsulin,
-                                        medName = record.bfMedName,
-                                        width = bfMedWidth,
-                                        medTiming = record.bfMedTiming,
-                                        fontSize = dataFontSize,
-                                        onLongClick = if (record.bfInsulin != null && record.bfInsulin > 0) {
-                                            {
-                                                val unit = MedicationData.detectUnit(record.bfMedName)
-                                                val doseStr = if (record.bfInsulin % 1f == 0f) "${record.bfInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.bfInsulin)}$unit"
-                                                val medDesc = buildString {
-                                                    if (record.bfMedName.isNotBlank()) append(record.bfMedName) else append("早餐用药")
-                                                    if (record.bfMedTiming.isNotBlank()) append(" · ${record.bfMedTiming}")
-                                                }
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🌅 早餐 · 用药",
-                                                    date = record.date,
-                                                    mainText = doseStr,
-                                                    subText = medDesc,
-                                                    highlightColor = TealPrimary
-                                                )
-                                            }
-                                        } else null
-                                    )
-                                    val bfPosts = record.getPostMealList(MealPeriod.MORNING)
-                                    TableBGCellContainer(
-                                        bg = record.postBfBG,
-                                        width = postBfWidth,
-                                        isFasting = false,
-                                        fontSize = dataFontSize,
-                                        extraCount = (bfPosts.size - 1).coerceAtLeast(0),
-                                        onLongClick = record.postBfBG?.let { bgVal ->
-                                            {
-                                                val status = BGUtils.evaluatePostMeal(bgVal)
-                                                val levelDesc = when (status?.level) {
-                                                    BGLevel.LOW -> "⚠️ 偏低 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
-                                                    BGLevel.HIGH -> "⚠️ 偏高 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
-                                                    BGLevel.NORMAL -> "✅ 正常理想范围 (4.4 ~ 7.8 mmol/L)"
-                                                    null -> ""
-                                                }
-                                                val fgColor = when (status?.level) {
-                                                    BGLevel.LOW -> cGlucoseLow
-                                                    BGLevel.NORMAL -> cGlucoseNormal
-                                                    BGLevel.HIGH -> cGlucoseHigh
-                                                    null -> TealPrimary
-                                                }
-                                                val extraDetail = if (bfPosts.size > 1) {
-                                                    "\n" + bfPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
-                                                } else ""
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🌅 早餐 · 餐后血糖",
-                                                    date = record.date,
-                                                    mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc + extraDetail,
-                                                    highlightColor = fgColor
-                                                )
-                                            }
-                                        }
-                                    )
-                                    if (isEnlarged) {
+                                        )
+                                    }
+                                    if (hasBfDiet) {
                                         TableDietCell(
                                             diet = record.bfDiet,
                                             width = bfDietWidth,
@@ -496,7 +561,7 @@ fun RecordTable(
                                     }
 
                                     // --- ☀️ 午餐段数据 ---
-                                    if (isEnlarged) {
+                                    if (hasPreLunch) {
                                         TableBGCellContainer(
                                             bg = record.preLunchBG,
                                             width = preLunchWidth,
@@ -528,66 +593,70 @@ fun RecordTable(
                                             }
                                         )
                                     }
-                                    TableMedicationCell(
-                                        dose = record.lunchInsulin,
-                                        medName = record.lunchMedName,
-                                        width = lunchMedWidth,
-                                        medTiming = record.lunchMedTiming,
-                                        fontSize = dataFontSize,
-                                        onLongClick = if (record.lunchInsulin != null && record.lunchInsulin > 0) {
-                                            {
-                                                val unit = MedicationData.detectUnit(record.lunchMedName)
-                                                val doseStr = if (record.lunchInsulin % 1f == 0f) "${record.lunchInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.lunchInsulin)}$unit"
-                                                val medDesc = buildString {
-                                                    if (record.lunchMedName.isNotBlank()) append(record.lunchMedName) else append("午餐用药")
-                                                    if (record.lunchMedTiming.isNotBlank()) append(" · ${record.lunchMedTiming}")
+                                    if (hasLunchMed) {
+                                        TableMedicationCell(
+                                            dose = record.lunchInsulin,
+                                            medName = record.lunchMedName,
+                                            width = lunchMedWidth,
+                                            medTiming = record.lunchMedTiming,
+                                            fontSize = dataFontSize,
+                                            onLongClick = if (record.lunchInsulin != null && record.lunchInsulin > 0) {
+                                                {
+                                                    val unit = MedicationData.detectUnit(record.lunchMedName)
+                                                    val doseStr = if (record.lunchInsulin % 1f == 0f) "${record.lunchInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.lunchInsulin)}$unit"
+                                                    val medDesc = buildString {
+                                                        if (record.lunchMedName.isNotBlank()) append(record.lunchMedName) else append("午餐用药")
+                                                        if (record.lunchMedTiming.isNotBlank()) append(" · ${record.lunchMedTiming}")
+                                                    }
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "☀️ 午餐 · 用药",
+                                                        date = record.date,
+                                                        mainText = doseStr,
+                                                        subText = medDesc,
+                                                        highlightColor = cLunchColor
+                                                    )
                                                 }
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "☀️ 午餐 · 用药",
-                                                    date = record.date,
-                                                    mainText = doseStr,
-                                                    subText = medDesc,
-                                                    highlightColor = cLunchColor
-                                                )
+                                            } else null
+                                        )
+                                    }
+                                    if (hasPostLunch) {
+                                        val lunchPosts = record.getPostMealList(MealPeriod.LUNCH)
+                                        TableBGCellContainer(
+                                            bg = record.postLunchBG,
+                                            width = postLunchWidth,
+                                            isFasting = false,
+                                            fontSize = dataFontSize,
+                                            extraCount = (lunchPosts.size - 1).coerceAtLeast(0),
+                                            onLongClick = record.postLunchBG?.let { bgVal ->
+                                                {
+                                                    val status = BGUtils.evaluatePostMeal(bgVal)
+                                                    val levelDesc = when (status?.level) {
+                                                        BGLevel.LOW -> "⚠️ 偏低 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
+                                                        BGLevel.HIGH -> "⚠️ 偏高 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
+                                                        BGLevel.NORMAL -> "✅ 正常理想范围 (4.4 ~ 7.8 mmol/L)"
+                                                        null -> ""
+                                                    }
+                                                    val fgColor = when (status?.level) {
+                                                        BGLevel.LOW -> cGlucoseLow
+                                                        BGLevel.NORMAL -> cGlucoseNormal
+                                                        BGLevel.HIGH -> cGlucoseHigh
+                                                        null -> cLunchColor
+                                                    }
+                                                    val extraDetail = if (lunchPosts.size > 1) {
+                                                        "\n" + lunchPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
+                                                    } else ""
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "☀️ 午餐 · 餐后血糖",
+                                                        date = record.date,
+                                                        mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
+                                                        subText = levelDesc + extraDetail,
+                                                        highlightColor = fgColor
+                                                    )
+                                                }
                                             }
-                                        } else null
-                                    )
-                                    val lunchPosts = record.getPostMealList(MealPeriod.LUNCH)
-                                    TableBGCellContainer(
-                                        bg = record.postLunchBG,
-                                        width = postLunchWidth,
-                                        isFasting = false,
-                                        fontSize = dataFontSize,
-                                        extraCount = (lunchPosts.size - 1).coerceAtLeast(0),
-                                        onLongClick = record.postLunchBG?.let { bgVal ->
-                                            {
-                                                val status = BGUtils.evaluatePostMeal(bgVal)
-                                                val levelDesc = when (status?.level) {
-                                                    BGLevel.LOW -> "⚠️ 偏低 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
-                                                    BGLevel.HIGH -> "⚠️ 偏高 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
-                                                    BGLevel.NORMAL -> "✅ 正常理想范围 (4.4 ~ 7.8 mmol/L)"
-                                                    null -> ""
-                                                }
-                                                val fgColor = when (status?.level) {
-                                                    BGLevel.LOW -> cGlucoseLow
-                                                    BGLevel.NORMAL -> cGlucoseNormal
-                                                    BGLevel.HIGH -> cGlucoseHigh
-                                                    null -> cLunchColor
-                                                }
-                                                val extraDetail = if (lunchPosts.size > 1) {
-                                                    "\n" + lunchPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
-                                                } else ""
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "☀️ 午餐 · 餐后血糖",
-                                                    date = record.date,
-                                                    mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc + extraDetail,
-                                                    highlightColor = fgColor
-                                                )
-                                            }
-                                        }
-                                    )
-                                    if (isEnlarged) {
+                                        )
+                                    }
+                                    if (hasLunchDiet) {
                                         TableDietCell(
                                             diet = record.lunchDiet,
                                             width = lunchDietWidth,
@@ -607,7 +676,7 @@ fun RecordTable(
                                     }
 
                                     // --- 🌙 晚餐段数据 ---
-                                    if (isEnlarged) {
+                                    if (hasPreDinner) {
                                         TableBGCellContainer(
                                             bg = record.preDinnerBG,
                                             width = preDinnerWidth,
@@ -639,66 +708,70 @@ fun RecordTable(
                                             }
                                         )
                                     }
-                                    TableMedicationCell(
-                                        dose = record.dinnerInsulin,
-                                        medName = record.dinnerMedName,
-                                        width = dinnerMedWidth,
-                                        medTiming = record.dinnerMedTiming,
-                                        fontSize = dataFontSize,
-                                        onLongClick = if (record.dinnerInsulin != null && record.dinnerInsulin > 0) {
-                                            {
-                                                val unit = MedicationData.detectUnit(record.dinnerMedName)
-                                                val doseStr = if (record.dinnerInsulin % 1f == 0f) "${record.dinnerInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.dinnerInsulin)}$unit"
-                                                val medDesc = buildString {
-                                                    if (record.dinnerMedName.isNotBlank()) append(record.dinnerMedName) else append("晚餐用药")
-                                                    if (record.dinnerMedTiming.isNotBlank()) append(" · ${record.dinnerMedTiming}")
+                                    if (hasDinnerMed) {
+                                        TableMedicationCell(
+                                            dose = record.dinnerInsulin,
+                                            medName = record.dinnerMedName,
+                                            width = dinnerMedWidth,
+                                            medTiming = record.dinnerMedTiming,
+                                            fontSize = dataFontSize,
+                                            onLongClick = if (record.dinnerInsulin != null && record.dinnerInsulin > 0) {
+                                                {
+                                                    val unit = MedicationData.detectUnit(record.dinnerMedName)
+                                                    val doseStr = if (record.dinnerInsulin % 1f == 0f) "${record.dinnerInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.dinnerInsulin)}$unit"
+                                                    val medDesc = buildString {
+                                                        if (record.dinnerMedName.isNotBlank()) append(record.dinnerMedName) else append("晚餐用药")
+                                                        if (record.dinnerMedTiming.isNotBlank()) append(" · ${record.dinnerMedTiming}")
+                                                    }
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🌙 晚餐 · 用药",
+                                                        date = record.date,
+                                                        mainText = doseStr,
+                                                        subText = medDesc,
+                                                        highlightColor = cDinnerColor
+                                                    )
                                                 }
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🌙 晚餐 · 用药",
-                                                    date = record.date,
-                                                    mainText = doseStr,
-                                                    subText = medDesc,
-                                                    highlightColor = cDinnerColor
-                                                )
+                                            } else null
+                                        )
+                                    }
+                                    if (hasPostDinner) {
+                                        val dinnerPosts = record.getPostMealList(MealPeriod.DINNER)
+                                        TableBGCellContainer(
+                                            bg = record.postDinnerBG,
+                                            width = postDinnerWidth,
+                                            isFasting = false,
+                                            fontSize = dataFontSize,
+                                            extraCount = (dinnerPosts.size - 1).coerceAtLeast(0),
+                                            onLongClick = record.postDinnerBG?.let { bgVal ->
+                                                {
+                                                    val status = BGUtils.evaluatePostMeal(bgVal)
+                                                    val levelDesc = when (status?.level) {
+                                                        BGLevel.LOW -> "⚠️ 偏低 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
+                                                        BGLevel.HIGH -> "⚠️ 偏高 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
+                                                        BGLevel.NORMAL -> "✅ 正常理想范围 (4.4 ~ 7.8 mmol/L)"
+                                                        null -> ""
+                                                    }
+                                                    val fgColor = when (status?.level) {
+                                                        BGLevel.LOW -> cGlucoseLow
+                                                        BGLevel.NORMAL -> cGlucoseNormal
+                                                        BGLevel.HIGH -> cGlucoseHigh
+                                                        null -> cDinnerColor
+                                                    }
+                                                    val extraDetail = if (dinnerPosts.size > 1) {
+                                                        "\n" + dinnerPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
+                                                    } else ""
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🌙 晚餐 · 餐后血糖",
+                                                        date = record.date,
+                                                        mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
+                                                        subText = levelDesc + extraDetail,
+                                                        highlightColor = fgColor
+                                                    )
+                                                }
                                             }
-                                        } else null
-                                    )
-                                    val dinnerPosts = record.getPostMealList(MealPeriod.DINNER)
-                                    TableBGCellContainer(
-                                        bg = record.postDinnerBG,
-                                        width = postDinnerWidth,
-                                        isFasting = false,
-                                        fontSize = dataFontSize,
-                                        extraCount = (dinnerPosts.size - 1).coerceAtLeast(0),
-                                        onLongClick = record.postDinnerBG?.let { bgVal ->
-                                            {
-                                                val status = BGUtils.evaluatePostMeal(bgVal)
-                                                val levelDesc = when (status?.level) {
-                                                    BGLevel.LOW -> "⚠️ 偏低 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
-                                                    BGLevel.HIGH -> "⚠️ 偏高 (餐后2h参考标准: 4.4 ~ 7.8 mmol/L)"
-                                                    BGLevel.NORMAL -> "✅ 正常理想范围 (4.4 ~ 7.8 mmol/L)"
-                                                    null -> ""
-                                                }
-                                                val fgColor = when (status?.level) {
-                                                    BGLevel.LOW -> cGlucoseLow
-                                                    BGLevel.NORMAL -> cGlucoseNormal
-                                                    BGLevel.HIGH -> cGlucoseHigh
-                                                    null -> cDinnerColor
-                                                }
-                                                val extraDetail = if (dinnerPosts.size > 1) {
-                                                    "\n" + dinnerPosts.mapIndexed { i, e -> "第${i + 1}次: ${String.format(Locale.US, "%.1f", e.value)}mmol/L ${e.tag} ${e.time}".trim() }.joinToString("\n")
-                                                } else ""
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🌙 晚餐 · 餐后血糖",
-                                                    date = record.date,
-                                                    mainText = "${String.format(Locale.US, "%.1f", bgVal)} mmol/L",
-                                                    subText = levelDesc + extraDetail,
-                                                    highlightColor = fgColor
-                                                )
-                                            }
-                                        }
-                                    )
-                                    if (isEnlarged) {
+                                        )
+                                    }
+                                    if (hasDinnerDiet) {
                                         TableDietCell(
                                             diet = record.dinnerDiet,
                                             width = dinnerDietWidth,
@@ -718,7 +791,7 @@ fun RecordTable(
                                     }
 
                                     // --- 🛌 睡前段数据 ---
-                                    if (isEnlarged) {
+                                    if (hasPreNight) {
                                         TableBGCellContainer(
                                             bg = record.preNightBG,
                                             width = preNightWidth,
@@ -750,34 +823,36 @@ fun RecordTable(
                                             }
                                         )
                                     }
-                                    TableMedicationCell(
-                                        dose = record.bedtimeInsulin,
-                                        medName = record.nightMedName,
-                                        width = bedtimeMedWidth,
-                                        isBedtime = true,
-                                        medTiming = record.nightMedTiming,
-                                        fontSize = dataFontSize,
-                                        onLongClick = if (record.bedtimeInsulin != null && record.bedtimeInsulin > 0) {
-                                            {
-                                                val unit = MedicationData.detectUnit(record.nightMedName)
-                                                val doseStr = if (record.bedtimeInsulin % 1f == 0f) "${record.bedtimeInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.bedtimeInsulin)}$unit"
-                                                val medDesc = buildString {
-                                                    if (record.nightMedName.isNotBlank()) append(record.nightMedName) else append("睡前用药")
-                                                    if (record.nightMedTiming.isNotBlank() && record.nightMedTiming != "餐前" && record.nightMedTiming != "睡前") {
-                                                        append(" · ${record.nightMedTiming}")
+                                    if (hasBedtimeMed) {
+                                        TableMedicationCell(
+                                            dose = record.bedtimeInsulin,
+                                            medName = record.nightMedName,
+                                            width = bedtimeMedWidth,
+                                            isBedtime = true,
+                                            medTiming = record.nightMedTiming,
+                                            fontSize = dataFontSize,
+                                            onLongClick = if (record.bedtimeInsulin != null && record.bedtimeInsulin > 0) {
+                                                {
+                                                    val unit = MedicationData.detectUnit(record.nightMedName)
+                                                    val doseStr = if (record.bedtimeInsulin % 1f == 0f) "${record.bedtimeInsulin.toInt()}$unit" else "${String.format(Locale.US, "%.1f", record.bedtimeInsulin)}$unit"
+                                                    val medDesc = buildString {
+                                                        if (record.nightMedName.isNotBlank()) append(record.nightMedName) else append("睡前用药")
+                                                        if (record.nightMedTiming.isNotBlank() && record.nightMedTiming != "餐前" && record.nightMedTiming != "睡前") {
+                                                            append(" · ${record.nightMedTiming}")
+                                                        }
                                                     }
+                                                    zoomDetail = CellZoomDetail(
+                                                        title = "🛌 睡前 · 用药",
+                                                        date = record.date,
+                                                        mainText = doseStr,
+                                                        subText = medDesc,
+                                                        highlightColor = cBedtimeColor
+                                                    )
                                                 }
-                                                zoomDetail = CellZoomDetail(
-                                                    title = "🛌 睡前 · 用药",
-                                                    date = record.date,
-                                                    mainText = doseStr,
-                                                    subText = medDesc,
-                                                    highlightColor = cBedtimeColor
-                                                )
-                                            }
-                                        } else null
-                                    )
-                                    if (isEnlarged) {
+                                            } else null
+                                        )
+                                    }
+                                    if (hasNightDiet) {
                                         TableDietCell(
                                             diet = record.nightDiet,
                                             width = nightDietWidth,
@@ -797,71 +872,75 @@ fun RecordTable(
                                     }
 
                                     // 全天胰岛素总剂量
-                                    Box(
-                                        modifier = Modifier
-                                            .width(totalInsulinWidth)
-                                            .combinedClickable(
-                                                onClick = {},
-                                                onLongClick = if (record.totalInsulin > 0) {
-                                                    {
-                                                        val doseStr = if (record.totalInsulin % 1f == 0f) "${record.totalInsulin.toInt()}U" else "${String.format(Locale.US, "%.1f", record.totalInsulin)}U"
-                                                        zoomDetail = CellZoomDetail(
-                                                            title = "📊 全天胰岛素总量",
-                                                            date = record.date,
-                                                            mainText = doseStr,
-                                                            subText = "当天所有餐次及睡前注射胰岛素累计总量",
-                                                            highlightColor = TealPrimary
-                                                        )
-                                                    }
-                                                } else null
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (record.totalInsulin > 0) {
-                                            Text(
-                                                text = if (record.totalInsulin % 1f == 0f) {
-                                                    "${record.totalInsulin.toInt()}U"
-                                                } else {
-                                                    "${String.format(Locale.US, "%.1f", record.totalInsulin)}U"
-                                                },
-                                                fontSize = dataFontSize,
-                                                fontWeight = FontWeight.Black,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = TealPrimary
-                                            )
-                                        } else {
-                                            Text("-", fontSize = dataFontSize, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                    if (hasTotalInsulin) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(totalInsulinWidth)
+                                                .combinedClickable(
+                                                    onClick = {},
+                                                    onLongClick = if (record.totalInsulin > 0) {
+                                                        {
+                                                            val doseStr = if (record.totalInsulin % 1f == 0f) "${record.totalInsulin.toInt()}U" else "${String.format(Locale.US, "%.1f", record.totalInsulin)}U"
+                                                            zoomDetail = CellZoomDetail(
+                                                                title = "📊 全天胰岛素总量",
+                                                                date = record.date,
+                                                                mainText = doseStr,
+                                                                subText = "当天所有餐次及睡前注射胰岛素累计总量",
+                                                                highlightColor = TealPrimary
+                                                            )
+                                                        }
+                                                    } else null
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (record.totalInsulin > 0) {
+                                                Text(
+                                                    text = if (record.totalInsulin % 1f == 0f) {
+                                                        "${record.totalInsulin.toInt()}U"
+                                                    } else {
+                                                        "${String.format(Locale.US, "%.1f", record.totalInsulin)}U"
+                                                    },
+                                                    fontSize = dataFontSize,
+                                                    fontWeight = FontWeight.Black,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = TealPrimary
+                                                )
+                                            } else {
+                                                Text("-", fontSize = dataFontSize, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                            }
                                         }
                                     }
 
                                     // 备注
-                                    Box(
-                                        modifier = Modifier
-                                            .width(notesWidth)
-                                            .padding(horizontal = 6.dp)
-                                            .combinedClickable(
-                                                onClick = {},
-                                                onLongClick = if (record.notes.isNotBlank()) {
-                                                    {
-                                                        zoomDetail = CellZoomDetail(
-                                                            title = "📝 备忘记录",
-                                                            date = record.date,
-                                                            mainText = record.notes,
-                                                            subText = "当天特殊备忘与注意事项",
-                                                            highlightColor = TealPrimary
-                                                        )
-                                                    }
-                                                } else null
-                                            ),
-                                        contentAlignment = Alignment.CenterStart
-                                    ) {
-                                        Text(
-                                            text = record.notes.ifBlank { "-" },
-                                            fontSize = if (isEnlarged) 13.sp else 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = if (isEnlarged) 2 else 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                    if (hasNotes) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(notesWidth)
+                                                .padding(horizontal = 6.dp)
+                                                .combinedClickable(
+                                                    onClick = {},
+                                                    onLongClick = if (record.notes.isNotBlank()) {
+                                                        {
+                                                            zoomDetail = CellZoomDetail(
+                                                                title = "📝 备忘记录",
+                                                                date = record.date,
+                                                                mainText = record.notes,
+                                                                subText = "当天特殊备忘与注意事项",
+                                                                highlightColor = TealPrimary
+                                                            )
+                                                        }
+                                                    } else null
+                                                ),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            Text(
+                                                text = record.notes.ifBlank { "-" },
+                                                fontSize = if (isEnlarged) 13.sp else 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = if (isEnlarged) 2 else 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
 
                                     // 操作按钮

@@ -10,6 +10,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * 血糖胰岛素应用 Room 数据库中心 (AppDatabase)：
+ *
+ * 架构契约与版本演进：
+ * 1. 单例持有：基于双重校验锁机制 (@Volatile + synchronized) 维护全局唯一实例 [INSTANCE]；
+ * 2. 数据库版本迁移历程 (Version 1 -> 6)：
+ *    - v1: 基础餐前餐后血糖及胰岛素字段；
+ *    - v2: 增加用药名称与时机字段；
+ *    - v3: 增加饮食与运动记录字段；
+ *    - v4: 增加餐后多阶段扩展 JSON 字段 (postBfBGExtra 等)；
+ *    - v5/v6: 结构平滑兼容迁移，提供完善的 [Migration] 策略保障旧版本用户数据零丢失；
+ * 3. 初始演示数据 [INITIAL_MOCK_DATA]：为首次启动或恢复演示数据提供标准临床样例。
+ */
 @Database(entities = [InsulinRecord::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun insulinDao(): InsulinDao

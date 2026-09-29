@@ -59,14 +59,11 @@ fun CellZoomDialog(
         onDismissRequest = onDismiss
     ) { dismissWithAnimation ->
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
-            ),
-            tonalElevation = 8.dp,
-            shadowElevation = 16.dp,
+            shape = AppleCardShape,
+            color = if (isDark) Color(0xFF1C1C1E) else Color.White,
+            border = appleCardBorder(),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
             modifier = Modifier
                 .width(360.dp)
                 .padding(16.dp)
@@ -85,36 +82,48 @@ fun CellZoomDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = ApplePillShape,
                         color = themeColor.copy(alpha = 0.12f)
                     ) {
                         Text(
                             text = detail.title,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.2).sp,
                             color = themeColor,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                         )
                     }
 
-                    IconButton(
-                        onClick = { dismissWithAnimation() },
-                        modifier = Modifier.size(32.dp)
+                    Surface(
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .applePressEffect(0.92f)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        IconButton(
+                            onClick = { dismissWithAnimation() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // 日期标识
                 Text(
                     text = "记录日期：${detail.date}",
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = (-0.15).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
@@ -124,7 +133,7 @@ fun CellZoomDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(AppleMdShape)
                         .background(themeColor.copy(alpha = 0.08f))
                         .padding(vertical = 24.dp, horizontal = 16.dp),
                     contentAlignment = Alignment.Center
@@ -132,8 +141,9 @@ fun CellZoomDialog(
                     Text(
                         text = detail.mainText,
                         fontSize = if (detail.mainText.length > 8) 26.sp else 38.sp,
-                        fontWeight = FontWeight.Black,
+                        fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
+                        letterSpacing = (-0.38).sp,
                         color = themeColor,
                         textAlign = TextAlign.Center,
                         lineHeight = if (detail.mainText.length > 8) 32.sp else 44.sp
@@ -143,38 +153,42 @@ fun CellZoomDialog(
                 if (detail.subText.isNotBlank()) {
                     Spacer(modifier = Modifier.height(14.dp))
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        shape = ApplePillShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     ) {
                         Text(
                             text = detail.subText,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = (-0.15).sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
 
-                // 确定按钮
-                ElevatedButton(
+                // 确定按钮 (Apple Pill Button + Press Effect)
+                androidx.compose.material3.Button(
                     onClick = { dismissWithAnimation() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.elevatedButtonColors(
+                    shape = ApplePillShape,
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = themeColor,
                         contentColor = Color.White
                     ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(46.dp)
+                        .applePressEffect(0.95f)
                 ) {
                     Text(
                         text = "完成",
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.23).sp
                     )
                 }
             }

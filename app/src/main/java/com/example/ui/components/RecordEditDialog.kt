@@ -88,6 +88,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -118,6 +120,19 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+/**
+ * 全天综合记录详细编辑弹窗 (RecordEditDialog)：
+ *
+ * 架构职责与边界隔离：
+ * 1. 深度编辑全天数据：允许用户细致编辑一整天的所有时段（早、午、晚、睡前）的全部指标；
+ * 2. 键盘智能避让系统：内置基于 IME WindowInsets 与局部坐标计算的滚动避让控制器，
+ *    确保任意输入框聚焦时自动高出底部操作区 8dp（半个字距），解决软键盘遮挡问题；
+ * 3. 边界与入参契约：
+ *    - 严格遵循单一传入实体 [initialRecord] 进行草稿初始化；
+ *    - 保存时组装全新的不可变 [InsulinRecord] 实体通过 [onSave] 回调输出；
+ *    - 内部编辑过程与外部 ViewModel 状态完全解耦，不产生中间副作用；
+ * 4. 共享组件复用：复用 [OcrStatusBanner] 等通用交互组件，保持视觉统一与易于维护。
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun RecordEditDialog(
@@ -130,6 +145,7 @@ fun RecordEditDialog(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    val medFrequencyMap = remember(allRecords) { MedicationData.computeMedicationFrequencies(allRecords) }
     val density = LocalDensity.current
     val imeInsets = WindowInsets.ime
     val imeBottom = imeInsets.getBottom(density)
@@ -370,34 +386,42 @@ fun RecordEditDialog(
         when (selectedPeriod) {
             MealPeriod.MORNING -> {
                 bfCategory = newCat
-                if (newCat == MedCategory.ORAL && (bfMedName.contains("胰岛素") || bfMedName.isBlank())) {
+                if (newCat == MedCategory.ORAL && (bfMedName.contains("胰岛素") || bfMedName.isBlank() || MedicationData.isGLP1Med(bfMedName))) {
                     bfMedName = "口服药"
                 } else if (newCat == MedCategory.INSULIN && (!bfMedName.contains("胰岛素") || bfMedName.isBlank())) {
                     bfMedName = "胰岛素"
+                } else if (newCat == MedCategory.GLP1 && (!MedicationData.isGLP1Med(bfMedName) || bfMedName.isBlank())) {
+                    bfMedName = "司美格鲁肽"
                 }
             }
             MealPeriod.LUNCH -> {
                 lunchCategory = newCat
-                if (newCat == MedCategory.ORAL && (lunchMedName.contains("胰岛素") || lunchMedName.isBlank())) {
+                if (newCat == MedCategory.ORAL && (lunchMedName.contains("胰岛素") || lunchMedName.isBlank() || MedicationData.isGLP1Med(lunchMedName))) {
                     lunchMedName = "口服药"
                 } else if (newCat == MedCategory.INSULIN && (!lunchMedName.contains("胰岛素") || lunchMedName.isBlank())) {
                     lunchMedName = "胰岛素"
+                } else if (newCat == MedCategory.GLP1 && (!MedicationData.isGLP1Med(lunchMedName) || lunchMedName.isBlank())) {
+                    lunchMedName = "司美格鲁肽"
                 }
             }
             MealPeriod.DINNER -> {
                 dinnerCategory = newCat
-                if (newCat == MedCategory.ORAL && (dinnerMedName.contains("胰岛素") || dinnerMedName.isBlank())) {
+                if (newCat == MedCategory.ORAL && (dinnerMedName.contains("胰岛素") || dinnerMedName.isBlank() || MedicationData.isGLP1Med(dinnerMedName))) {
                     dinnerMedName = "口服药"
                 } else if (newCat == MedCategory.INSULIN && (!dinnerMedName.contains("胰岛素") || dinnerMedName.isBlank())) {
                     dinnerMedName = "胰岛素"
+                } else if (newCat == MedCategory.GLP1 && (!MedicationData.isGLP1Med(dinnerMedName) || dinnerMedName.isBlank())) {
+                    dinnerMedName = "司美格鲁肽"
                 }
             }
             MealPeriod.NIGHT -> {
                 nightCategory = newCat
-                if (newCat == MedCategory.ORAL && (nightMedName.contains("胰岛素") || nightMedName.isBlank())) {
+                if (newCat == MedCategory.ORAL && (nightMedName.contains("胰岛素") || nightMedName.isBlank() || MedicationData.isGLP1Med(nightMedName))) {
                     nightMedName = "口服药"
                 } else if (newCat == MedCategory.INSULIN && (!nightMedName.contains("胰岛素") || nightMedName.isBlank())) {
                     nightMedName = "胰岛素"
+                } else if (newCat == MedCategory.GLP1 && (!MedicationData.isGLP1Med(nightMedName) || nightMedName.isBlank())) {
+                    nightMedName = "司美格鲁肽"
                 }
             }
         }
@@ -448,56 +472,79 @@ fun RecordEditDialog(
         }
     }
 
-    // 原相机拍照识别药物逻辑
+    // 原相机拍照/相册识别药物逻辑
     val context = LocalContext.current
     var isRecognizing by remember { mutableStateOf(false) }
     var recognitionMessage by remember { mutableStateOf<String?>(null) }
     var recognitionMatched by remember { mutableStateOf(false) }
     var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var showImageSourcePicker by remember { mutableStateOf(false) }
+
+    fun processImageForMedication(uri: Uri) {
+        isRecognizing = true
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val image = InputImage.fromFilePath(context, uri)
+                val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+                recognizer.process(image)
+                    .addOnSuccessListener { visionText ->
+                        isRecognizing = false
+                        val result = MedicationData.matchMedicationFromOcr(visionText.text)
+                        if (result.matchedName != null) {
+                            recognitionMatched = true
+                            onCategoryChange(result.category)
+                            onMedNameChange(result.matchedName)
+                            if (result.suggestedDose != null) {
+                                val doseStr = if (result.suggestedDose % 1f == 0f) {
+                                    result.suggestedDose.toInt().toString()
+                                } else {
+                                    result.suggestedDose.toString()
+                                }
+                                onDoseChange(doseStr)
+                            }
+                            if (result.suggestedTiming != null && selectedPeriod != MealPeriod.NIGHT) {
+                                onMedTimingChange(result.suggestedTiming)
+                            }
+                            val timingPart = if (result.suggestedTiming != null) "·${result.suggestedTiming}" else ""
+                            val unitStr = MedicationData.detectUnit(result.matchedName, result.category)
+                            val dosePart = if (result.suggestedDose != null) " ${if (result.suggestedDose % 1f == 0f) result.suggestedDose.toInt() else result.suggestedDose}$unitStr" else ""
+                            val bgPart = if (result.detectedBG != null) " (检测到血糖 ${result.detectedBG} mmol/L)" else ""
+                            recognitionMessage = "已识别：${result.matchedName}$dosePart$timingPart（${result.category.label}）$bgPart"
+                        } else {
+                            recognitionMatched = false
+                            if (result.detectedBG != null) {
+                                recognitionMessage = "未匹配到药物，但检测到血糖：${result.detectedBG} mmol/L"
+                            } else {
+                                recognitionMessage = "未匹配到列表内的药物，请手动输入药物名称"
+                            }
+                        }
+                    }
+                    .addOnFailureListener {
+                        isRecognizing = false
+                        recognitionMatched = false
+                        recognitionMessage = "未识别到文字，请手动输入药物名称"
+                    }
+            } catch (_: Exception) {
+                isRecognizing = false
+                recognitionMatched = false
+                recognitionMessage = "识别失败，请手动输入药物名称"
+            }
+        }
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && currentPhotoUri != null) {
-            isRecognizing = true
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    val image = InputImage.fromFilePath(context, currentPhotoUri!!)
-                    val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-                    recognizer.process(image)
-                        .addOnSuccessListener { visionText ->
-                            isRecognizing = false
-                            val result = MedicationData.matchMedicationFromOcr(visionText.text)
-                            if (result.matchedName != null) {
-                                recognitionMatched = true
-                                onCategoryChange(result.category)
-                                onMedNameChange(result.matchedName)
-                                if (result.suggestedDose != null) {
-                                    val doseStr = if (result.suggestedDose % 1f == 0f) {
-                                        result.suggestedDose.toInt().toString()
-                                    } else {
-                                        result.suggestedDose.toString()
-                                    }
-                                    onDoseChange(doseStr)
-                                }
-                                recognitionMessage = "已识别：${result.matchedName}（${result.category.label}）"
-                            } else {
-                                // 没有匹配到列表内的药物则依旧让用户自己填写
-                                recognitionMatched = false
-                                recognitionMessage = "未匹配到列表内的药物，请手动输入药物名称"
-                            }
-                        }
-                        .addOnFailureListener {
-                            isRecognizing = false
-                            recognitionMatched = false
-                            recognitionMessage = "未识别到文字，请手动输入药物名称"
-                        }
-                } catch (_: Exception) {
-                    isRecognizing = false
-                    recognitionMatched = false
-                    recognitionMessage = "识别失败，请手动输入药物名称"
-                }
-            }
+            processImageForMedication(currentPhotoUri!!)
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            processImageForMedication(uri)
         }
     }
 
@@ -629,9 +676,16 @@ fun RecordEditDialog(
         }
     }
 
+    ImageSourcePickerDialog(
+        visible = showImageSourcePicker,
+        onDismiss = { showImageSourcePicker = false },
+        onTakePhoto = { triggerCamera() },
+        onPickGallery = { galleryLauncher.launch("image/*") }
+    )
+
     FrostedGlassDialogOverlay(
         onDismissRequest = onDismiss,
-        dismissOnBackPress = !showDatePicker
+        dismissOnBackPress = !showDatePicker && !showImageSourcePicker
     ) { dismissWithAnimation ->
         BoxWithConstraints(
             modifier = Modifier
@@ -657,15 +711,12 @@ fun RecordEditDialog(
                         indication = null
                     ) { /* prevent dismissal on card click */ }
                     .testTag("record_edit_dialog"),
-                shape = RoundedCornerShape(24.dp),
+                shape = AppleCardShape,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f)
+                    containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
                 ),
-                border = BorderStroke(
-                    1.dp,
-                    if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+                border = appleCardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // 1. 顶部紧凑栏：日期选择与关闭按钮（固定在Card顶部，圆角与关闭按钮永不被裁剪）
@@ -677,14 +728,17 @@ fun RecordEditDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = ApplePillShape,
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = appleCardBorder(),
                             modifier = Modifier
+                                .clip(ApplePillShape)
+                                .applePressEffect(0.95f)
                                 .clickable { showDatePicker = true }
                                 .testTag("dialog_date_picker_button")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(7.dp)
                             ) {
@@ -692,26 +746,32 @@ fun RecordEditDialog(
                                     imageVector = Icons.Default.CalendarMonth,
                                     contentDescription = null,
                                     tint = TealPrimary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Text(
                                     text = date,
                                     fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = (-0.2).sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
                                 )
                                 if (weekdayStr.isNotBlank()) {
                                     Text(
                                         text = weekdayStr,
                                         fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        letterSpacing = (-0.12).sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
                                     )
                                 }
                                 Text(
                                     text = "修改 >",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = TealPrimary
+                                    letterSpacing = (-0.12).sp,
+                                    color = TealPrimary,
+                                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
                                 )
                             }
                         }
@@ -720,6 +780,8 @@ fun RecordEditDialog(
                             onClick = { dismissWithAnimation() },
                             modifier = Modifier
                                 .size(32.dp)
+                                .clip(CircleShape)
+                                .applePressEffect(0.92f)
                                 .testTag("dialog_close_button")
                         ) {
                             Icon(
@@ -746,55 +808,10 @@ fun RecordEditDialog(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                             // 2. 时段选择 Tab 栏 (晨间, 午间, 傍晚, 睡前)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                                    .padding(4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                MealPeriod.values().forEach { period ->
-                                    val isSelected = period == selectedPeriod
-                                    val periodThemeColor = when (period) {
-                                        MealPeriod.MORNING -> AppThemeColors.breakfastColor
-                                        MealPeriod.LUNCH -> AppThemeColors.lunchColor
-                                        MealPeriod.DINNER -> AppThemeColors.dinnerColor
-                                        MealPeriod.NIGHT -> AppThemeColors.bedtimeColor
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(
-                                                if (isSelected) {
-                                                    if (AppThemeColors.isDark) periodThemeColor.copy(alpha = 0.28f)
-                                                    else MaterialTheme.colorScheme.surface
-                                                } else Color.Transparent
-                                            )
-                                            .clickable { selectedPeriod = period }
-                                            .padding(vertical = 7.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                        ) {
-                                            Text(
-                                                text = period.iconText,
-                                                fontSize = 12.sp
-                                            )
-                                            Text(
-                                                text = period.title,
-                                                fontSize = 12.5.sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) periodThemeColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                            MealPeriodSelectorCapsule(
+                                selectedPeriod = selectedPeriod,
+                                onPeriodSelected = { selectedPeriod = it }
+                            )
 
                             // 3. 仅展示选中时段的录入表单 (一次只添加/修改一个时段)
                             val currentThemeBg = when (selectedPeriod) {
@@ -973,7 +990,7 @@ fun RecordEditDialog(
                                             color = TealPrimary.copy(alpha = 0.12f),
                                             border = BorderStroke(0.5.dp, TealPrimary.copy(alpha = 0.35f)),
                                             modifier = Modifier
-                                                .clickable { triggerCamera() }
+                                                .clickable { showImageSourcePicker = true }
                                                 .testTag("camera_scan_med_button")
                                         ) {
                                             Row(
@@ -991,47 +1008,18 @@ fun RecordEditDialog(
                                                     text = "拍照识药",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = TealPrimary
+                                                    color = TealPrimary,
+                                                    maxLines = 1
                                                 )
                                             }
                                         }
                                     }
 
-                                    // 类别分类选择：胰岛素 vs 口服药
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        listOf(MedCategory.INSULIN, MedCategory.ORAL).forEach { cat ->
-                                            val isCatSelected = currentCategory == cat
-                                            Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isCatSelected) TealPrimary.copy(alpha = 0.15f)
-                                                       else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                                border = BorderStroke(
-                                                    width = if (isCatSelected) 1.dp else 0.5.dp,
-                                                    color = if (isCatSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                                ),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clickable { onCategoryChange(cat) }
-                                                    .testTag("med_category_${cat.name.lowercase()}")
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(vertical = 7.dp),
-                                                    horizontalArrangement = Arrangement.Center,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = "${cat.icon} ${cat.label}",
-                                                        fontSize = 12.sp,
-                                                        fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium,
-                                                        color = if (isCatSelected) TealPrimary else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
+                                    // 类别分类选择：胰岛素 vs 口服药 vs GLP-1/针剂
+                                    MedCategorySelectorCapsule(
+                                        selectedCategory = currentCategory,
+                                        onCategorySelected = onCategoryChange
+                                    )
 
                                     // 药名输入(口服药/胰岛素下拉+用户自由输入) + 自动识别单位的用药量输入
                                     val dynamicUnit = MedicationData.detectUnit(currentMedName, currentCategory)
@@ -1044,6 +1032,7 @@ fun RecordEditDialog(
                                             value = currentMedName,
                                             onValueChange = onMedNameChange,
                                             category = currentCategory,
+                                            options = MedicationData.getMedicationOptions(currentCategory, allRecords, medFrequencyMap),
                                             modifier = Modifier.weight(1.3f),
                                             onFocusWithCoordinates = onFieldFocus
                                         )
@@ -1071,110 +1060,21 @@ fun RecordEditDialog(
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            val timingList = listOf("餐前", "餐中", "餐后")
-                                            timingList.forEach { timing ->
-                                                val isTimingSelected = currentMedTiming == timing
-                                                Surface(
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (isTimingSelected) TealPrimary.copy(alpha = 0.15f)
-                                                           else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                                    border = BorderStroke(
-                                                        width = if (isTimingSelected) 1.dp else 0.5.dp,
-                                                        color = if (isTimingSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                                    ),
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .clickable { onMedTimingChange(timing) }
-                                                        .testTag("med_timing_$timing")
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier.padding(vertical = 5.5.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = timing,
-                                                            fontSize = 11.5.sp,
-                                                            fontWeight = if (isTimingSelected) FontWeight.Bold else FontWeight.Medium,
-                                                            color = if (isTimingSelected) TealPrimary else MaterialTheme.colorScheme.onSurface
-                                                        )
-                                                    }
-                                                }
-                                            }
+                                            MedicationTimingSelectorCapsule(
+                                                selectedTiming = currentMedTiming,
+                                                onTimingSelected = onMedTimingChange,
+                                                modifier = Modifier.weight(1f),
+                                                height = 36.dp
+                                            )
                                         }
                                     }
 
                                     // OCR 识别状态与反馈提示
-                                    if (isRecognizing) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(TealPrimary.copy(alpha = 0.08f))
-                                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(13.dp),
-                                                strokeWidth = 2.dp,
-                                                color = TealPrimary
-                                            )
-                                            Text(
-                                                text = "正在识别药盒文字并匹配抗糖药物...",
-                                                fontSize = 11.sp,
-                                                color = TealPrimary
-                                            )
-                                        }
-                                    } else if (recognitionMessage != null) {
-                                        val isSuccess = recognitionMatched
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isSuccess) Color(0xFF10B981).copy(alpha = 0.12f)
-                                                   else Color(0xFFF59E0B).copy(alpha = 0.12f),
-                                            border = BorderStroke(
-                                                0.5.dp,
-                                                if (isSuccess) Color(0xFF10B981).copy(alpha = 0.4f)
-                                                else Color(0xFFF59E0B).copy(alpha = 0.4f)
-                                            ),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                    modifier = Modifier.weight(1f)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Info,
-                                                        contentDescription = null,
-                                                        tint = if (isSuccess) Color(0xFF059669) else Color(0xFFD97706),
-                                                        modifier = Modifier.size(15.dp)
-                                                    )
-                                                    Text(
-                                                        text = recognitionMessage ?: "",
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = if (isSuccess) Color(0xFF059669) else Color(0xFFD97706)
-                                                    )
-                                                }
-                                                IconButton(
-                                                    onClick = { recognitionMessage = null },
-                                                    modifier = Modifier.size(18.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Close,
-                                                        contentDescription = "关闭提示",
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
+                                    OcrStatusBanner(
+                                        isRecognizing = isRecognizing,
+                                        recognitionMessage = recognitionMessage,
+                                        onDismissMessage = { recognitionMessage = null }
+                                    )
                                 }
 
                                 // 第三行：餐食记录 (让用户记录这一餐吃了什么东西)
@@ -1325,10 +1225,16 @@ fun RecordEditDialog(
                         ) {
                             OutlinedButton(
                                 onClick = onDismiss,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.padding(end = 10.dp)
+                                shape = ApplePillShape,
+                                modifier = Modifier
+                                    .padding(end = 10.dp)
+                                    .applePressEffect(0.95f)
                             ) {
-                                Text("取消")
+                                Text(
+                                    "取消",
+                                    fontSize = 14.5.sp,
+                                    letterSpacing = (-0.2).sp
+                                )
                             }
 
                             Button(
@@ -1386,11 +1292,20 @@ fun RecordEditDialog(
                                         onSave(newRecord)
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = ApplePillShape,
                                 colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                                modifier = Modifier.testTag("save_record_button")
+                                modifier = Modifier
+                                    .height(42.dp)
+                                    .applePressEffect(0.95f)
+                                    .testTag("save_record_button")
                             ) {
-                                Text("保存${selectedPeriod.title}记录", fontWeight = FontWeight.Bold)
+                                Text(
+                                    "保存${selectedPeriod.title}记录",
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = (-0.2).sp,
+                                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
+                                )
                             }
                         }
                     } // 结束 Card 内顶层 Column
@@ -1463,14 +1378,17 @@ private fun MedicationDropdownField(
     value: String,
     onValueChange: (String) -> Unit,
     category: MedCategory,
+    options: List<String> = emptyList(),
     modifier: Modifier = Modifier,
     onFocusWithCoordinates: ((LayoutCoordinates) -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val options = if (category == MedCategory.ORAL) {
-        MedicationData.commonOralMeds
-    } else {
-        MedicationData.commonInsulinMeds
+    val displayOptions = remember(options, category) {
+        if (options.isNotEmpty()) options else when (category) {
+            MedCategory.ORAL -> MedicationData.commonOralMeds
+            MedCategory.INSULIN -> MedicationData.commonInsulinMeds
+            MedCategory.GLP1 -> MedicationData.commonGLP1Meds
+        }
     }
     var isFocused by remember { mutableStateOf(false) }
     var currentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -1481,7 +1399,16 @@ private fun MedicationDropdownField(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            label = { Text(if (category == MedCategory.ORAL) "口服药名" else "胰岛素名", fontSize = 11.sp) },
+            label = {
+                Text(
+                    when (category) {
+                        MedCategory.ORAL -> "口服药名"
+                        MedCategory.INSULIN -> "胰岛素名"
+                        MedCategory.GLP1 -> "针剂/GLP-1药名"
+                    },
+                    fontSize = 11.sp
+                )
+            },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
@@ -1532,7 +1459,7 @@ private fun MedicationDropdownField(
                 .widthIn(min = 180.dp)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            options.forEach { option ->
+            displayOptions.forEach { option ->
                 val isGeneric = option == "胰岛素" || option == "口服药"
                 DropdownMenuItem(
                     text = {

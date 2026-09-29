@@ -14,6 +14,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,11 +51,17 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -91,10 +99,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -124,11 +134,19 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * 极简敏捷单条记录录入弹窗：
- * - 紧凑轻盈，去除冗余大边框与说明文字
- * - 1 行 4 段时段胶囊切换，默认根据当前系统时间自动匹配
- * - 1 行 4 项条目类型选择（血糖、用餐、用药、餐后）
- * - 聚焦输入，支持即时保存与连续记多笔
+ * 极简敏捷单条记录录入弹窗 (AddItemDialog)：
+ *
+ * 架构职责与边界隔离：
+ * 1. 敏捷快速记一笔：聚焦单餐段特定条目（血糖、餐食、用药、运动、餐后），提供即时记录与即时保存；
+ * 2. 状态自治隔离：
+ *    - 弹窗内拥有独立的输入草稿状态与修改脏标记快照（isPreBgModified、isDietModified、isMedModified 等），
+ *    - 避免未保存的草稿对全局数据产生任何脏写入或副作用；
+ * 3. 契约化输出回调：
+ *    - 用户确认保存时，通过单一高内聚的回调 [onSaveItem] 将结构化更新项原子回传至 ViewModel；
+ *    - 外部通过参数契约隔离，内部实现完全黑盒化，避免改动内部逻辑牵连上层或其他界面；
+ * 4. 共享组件复用：
+ *    - 复用 [DateTimePickerDialog]、[MealPeriodSelectorCapsule]、[MedCategorySelectorCapsule]、
+ *      [QuickMedChips]、[OcrStatusBanner]、[StepAdjustButtons]，彻底解除与编辑弹窗间的双重冗余维护。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -142,16 +160,20 @@ fun AddItemDialog(
     onSaveItem: (
         date: String,
         period: MealPeriod,
-        itemType: ItemType,
-        bgValue: Float?,
+        preBgValue: Float?,
+        isPreBgModified: Boolean,
         dietText: String,
+        isDietModified: Boolean,
         medName: String,
         dose: Float?,
         medTiming: String,
-        postMealTag: String,
-        postMealTime: String,
+        isMedModified: Boolean,
         exerciseText: String,
-        postMealIndex: Int?,
+        isExerciseModified: Boolean,
+        postMealEntries: List<com.example.data.PostMealEntry>?,
+        isPostMealModified: Boolean,
+        recordTime: String,
+        isTimeManuallyEdited: Boolean,
         keepDialogOpen: Boolean
     ) -> Unit
 ) {
@@ -175,8 +197,11 @@ fun AddItemDialog(
         mutableStateOf(initialPostMealIndex)
     }
 
-    // 表单状态
-    var bgInputText by remember { mutableStateOf("") }
+    // 表单状态：解耦餐前与餐后血糖，记忆每个选项卡数据
+    var preBgInputText by remember { mutableStateOf("") }
+    var postBgInputText by remember { mutableStateOf("") }
+    val postMealInputs = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    val postMealTimes = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     var dietInputText by remember { mutableStateOf("") }
     var exerciseNameInputText by remember { mutableStateOf("") }
     var exerciseDurationInputText by remember { mutableStateOf("") }
@@ -190,13 +215,40 @@ fun AddItemDialog(
     var isTimeManuallyEdited by remember { mutableStateOf(false) }
     val extraDynamicPostMealTabs = remember { mutableStateListOf<String>() }
 
-    // 历史常用药物使用频次统计（用于置顶用户最常用的药物）
+    // 初始状态快照，用于精确检测哪些项目被修改/新增/删除
+    var initialPreBg by remember { mutableStateOf<Float?>(null) }
+    var initialDiet by remember { mutableStateOf("") }
+    var initialExercise by remember { mutableStateOf("") }
+    var initialMedDose by remember { mutableStateOf<Float?>(null) }
+    var initialMedName by remember { mutableStateOf("") }
+    var initialMedTiming by remember { mutableStateOf("") }
+    val initialPostMealMap = remember { androidx.compose.runtime.mutableStateMapOf<String, Float>() }
+    val periodDrafts = remember(selectedDate) { mutableMapOf<MealPeriod, PeriodDraftState>() }
+
+    // 历史真实用药频次统计（精确统计有效记录，包含用户真实使用的“胰岛素”或具体药名）
     val medFrequencyMap = remember(allRecords) {
-        allRecords.flatMap { record ->
-            listOf(record.bfMedName, record.lunchMedName, record.dinnerMedName, record.nightMedName)
-        }.filter { it.isNotBlank() && it != "胰岛素" && it != "口服药" }
-        .groupingBy { it }
-        .eachCount()
+        val usedMeds = mutableListOf<String>()
+        allRecords.forEach { record ->
+            if (record.bfInsulin != null && record.bfInsulin > 0f && record.bfMedName.isNotBlank()) {
+                usedMeds.add(record.bfMedName.trim())
+            }
+            if (record.lunchInsulin != null && record.lunchInsulin > 0f && record.lunchMedName.isNotBlank()) {
+                usedMeds.add(record.lunchMedName.trim())
+            }
+            if (record.dinnerInsulin != null && record.dinnerInsulin > 0f && record.dinnerMedName.isNotBlank()) {
+                usedMeds.add(record.dinnerMedName.trim())
+            }
+            if (record.bedtimeInsulin != null && record.bedtimeInsulin > 0f && record.nightMedName.isNotBlank()) {
+                usedMeds.add(record.nightMedName.trim())
+            }
+        }
+        usedMeds.groupingBy { it }.eachCount()
+    }
+
+    val topInsulinMed = remember(medFrequencyMap) {
+        medFrequencyMap.filterKeys {
+            MedicationData.inferCategory(it) == MedCategory.INSULIN
+        }.maxByOrNull { it.value }?.key
     }
 
     // 原相机拍照识别药物逻辑
@@ -205,45 +257,69 @@ fun AddItemDialog(
     var isRecognizing by remember { mutableStateOf(false) }
     var recognitionMessage by remember { mutableStateOf<String?>(null) }
     var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var showImageSourcePicker by remember { mutableStateOf(false) }
+
+    fun processImageForMedication(uri: Uri) {
+        isRecognizing = true
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val image = InputImage.fromFilePath(context, uri)
+                val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+                recognizer.process(image)
+                    .addOnSuccessListener { visionText ->
+                        isRecognizing = false
+                        val result = MedicationData.matchMedicationFromOcr(visionText.text)
+                        if (result.matchedName != null) {
+                            selectedMedCategory = result.category
+                            medNameInputText = result.matchedName
+                            if (result.suggestedDose != null) {
+                                val doseStr = if (result.suggestedDose % 1f == 0f) {
+                                    result.suggestedDose.toInt().toString()
+                                } else {
+                                    result.suggestedDose.toString()
+                                }
+                                medDoseInputText = doseStr
+                            }
+                            if (result.suggestedTiming != null && selectedPeriod != MealPeriod.NIGHT) {
+                                medTimingChoice = result.suggestedTiming
+                            }
+                            val timingPart = if (result.suggestedTiming != null) "·${result.suggestedTiming}" else ""
+                            val unitStr = MedicationData.detectUnit(result.matchedName, result.category)
+                            val dosePart = if (result.suggestedDose != null) " ${if (result.suggestedDose % 1f == 0f) result.suggestedDose.toInt() else result.suggestedDose}$unitStr" else ""
+                            val bgPart = if (result.detectedBG != null) " (检测到血糖 ${result.detectedBG} mmol/L)" else ""
+                            recognitionMessage = "已识别：${result.matchedName}$dosePart$timingPart（${result.category.label}）$bgPart"
+                        } else {
+                            if (result.detectedBG != null) {
+                                recognitionMessage = "未匹配到药物，但检测到血糖：${result.detectedBG} mmol/L"
+                            } else {
+                                recognitionMessage = "未匹配到列表内的药物，请手动输入药物名称"
+                            }
+                        }
+                    }
+                    .addOnFailureListener {
+                        isRecognizing = false
+                        recognitionMessage = "未识别到文字，请手动输入药物名称"
+                    }
+            } catch (_: Exception) {
+                isRecognizing = false
+                recognitionMessage = "识别失败，请手动输入药物名称"
+            }
+        }
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && currentPhotoUri != null) {
-            isRecognizing = true
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    val image = InputImage.fromFilePath(context, currentPhotoUri!!)
-                    val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-                    recognizer.process(image)
-                        .addOnSuccessListener { visionText ->
-                            isRecognizing = false
-                            val result = MedicationData.matchMedicationFromOcr(visionText.text)
-                            if (result.matchedName != null) {
-                                selectedMedCategory = result.category
-                                medNameInputText = result.matchedName
-                                if (result.suggestedDose != null) {
-                                    val doseStr = if (result.suggestedDose % 1f == 0f) {
-                                        result.suggestedDose.toInt().toString()
-                                    } else {
-                                        result.suggestedDose.toString()
-                                    }
-                                    medDoseInputText = doseStr
-                                }
-                                recognitionMessage = "已识别：${result.matchedName}（${result.category.label}）"
-                            } else {
-                                recognitionMessage = "未匹配到列表内的药物，请手动输入药物名称"
-                            }
-                        }
-                        .addOnFailureListener {
-                            isRecognizing = false
-                            recognitionMessage = "未识别到文字，请手动输入药物名称"
-                        }
-                } catch (_: Exception) {
-                    isRecognizing = false
-                    recognitionMessage = "识别失败，请手动输入药物名称"
-                }
-            }
+            processImageForMedication(currentPhotoUri!!)
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            processImageForMedication(uri)
         }
     }
 
@@ -283,136 +359,198 @@ fun AddItemDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
-    // 动态回显与载入已有数据
-    fun loadExistingData(date: String, period: MealPeriod, itemType: ItemType, postMealIdx: Int?) {
+    // 动态回显与载入指定餐段的全部已有数据
+    fun loadExistingDataForPeriod(date: String, period: MealPeriod, postMealIdx: Int? = null) {
         val currentRecord = allRecords.find { it.date == date }
-        when (itemType) {
-            ItemType.PRE_MEAL_BG -> {
-                val bg = when (period) {
-                    MealPeriod.MORNING -> currentRecord?.fastingBG ?: currentRecord?.preBfBG
-                    MealPeriod.LUNCH -> currentRecord?.preLunchBG
-                    MealPeriod.DINNER -> currentRecord?.preDinnerBG
-                    MealPeriod.NIGHT -> currentRecord?.preNightBG
-                }
-                bgInputText = bg?.let { String.format(Locale.US, "%.1f", it) } ?: ""
-                if (!isTimeManuallyEdited) {
-                    currentItemTime = if (bg != null) (currentRecord?.getItemTime(period, "preBG") ?: nowTimeStr) else nowTimeStr
-                }
+
+        // 1. 餐前血糖
+        val bg = when (period) {
+            MealPeriod.MORNING -> currentRecord?.fastingBG ?: currentRecord?.preBfBG
+            MealPeriod.LUNCH -> currentRecord?.preLunchBG
+            MealPeriod.DINNER -> currentRecord?.preDinnerBG
+            MealPeriod.NIGHT -> currentRecord?.preNightBG
+        }
+        preBgInputText = bg?.let { String.format(Locale.US, "%.1f", it) } ?: ""
+        initialPreBg = bg
+
+        // 2. 餐后血糖列表
+        val list = currentRecord?.getPostMealList(period) ?: emptyList()
+        postMealInputs.clear()
+        postMealTimes.clear()
+        initialPostMealMap.clear()
+        list.forEach { entry ->
+            val normTag = com.example.data.PostMealUtils.normalizeTag(entry.tag.ifBlank { "餐后2h" })
+            val valStr = String.format(Locale.US, "%.1f", entry.value)
+            postMealInputs[normTag] = valStr
+            postMealTimes[normTag] = entry.time.ifBlank { nowTimeStr }
+            initialPostMealMap[normTag] = entry.value
+        }
+
+        val targetEntry = if (postMealIdx != null && postMealIdx in list.indices) {
+            list[postMealIdx]
+        } else {
+            list.find { com.example.data.PostMealUtils.isTagMatch(it.tag.ifBlank { "餐后2h" }, postMealTagChoice) }
+        }
+        if (targetEntry != null) {
+            val actualIdx = list.indexOf(targetEntry)
+            currentPostMealIndex = if (actualIdx >= 0) actualIdx else postMealIdx
+            postMealTagChoice = com.example.data.PostMealUtils.normalizeTag(targetEntry.tag.ifBlank { "餐后2h" })
+            postBgInputText = String.format(Locale.US, "%.1f", targetEntry.value)
+            postMealTimeInputText = targetEntry.time.ifBlank { nowTimeStr }
+        } else {
+            currentPostMealIndex = null
+            postBgInputText = postMealInputs[postMealTagChoice] ?: ""
+            postMealTimeInputText = postMealTimes[postMealTagChoice] ?: nowTimeStr
+        }
+
+        // 3. 用餐
+        val d = when (period) {
+            MealPeriod.MORNING -> currentRecord?.bfDiet
+            MealPeriod.LUNCH -> currentRecord?.lunchDiet
+            MealPeriod.DINNER -> currentRecord?.dinnerDiet
+            MealPeriod.NIGHT -> currentRecord?.nightDiet
+        } ?: ""
+        dietInputText = d
+        initialDiet = d
+
+        // 4. 运动
+        val ex = when (period) {
+            MealPeriod.MORNING -> currentRecord?.bfExercise
+            MealPeriod.LUNCH -> currentRecord?.lunchExercise
+            MealPeriod.DINNER -> currentRecord?.dinnerExercise
+            MealPeriod.NIGHT -> currentRecord?.nightExercise
+        } ?: ""
+        val parsed = com.example.data.parseExercise(ex)
+        exerciseNameInputText = parsed.name
+        exerciseDurationInputText = parsed.duration ?: ""
+        initialExercise = ex
+
+        // 5. 用药
+        val (name, dose, timing) = when (period) {
+            MealPeriod.MORNING -> Triple(currentRecord?.bfMedName ?: "", currentRecord?.bfInsulin, currentRecord?.bfMedTiming ?: "")
+            MealPeriod.LUNCH -> Triple(currentRecord?.lunchMedName ?: "", currentRecord?.lunchInsulin, currentRecord?.lunchMedTiming ?: "")
+            MealPeriod.DINNER -> Triple(currentRecord?.dinnerMedName ?: "", currentRecord?.dinnerInsulin, currentRecord?.dinnerMedTiming ?: "")
+            MealPeriod.NIGHT -> Triple(currentRecord?.nightMedName ?: "", currentRecord?.bedtimeInsulin, currentRecord?.nightMedTiming ?: "")
+        }
+        initialMedName = name
+        initialMedDose = dose
+        initialMedTiming = timing
+        val defaultMedName = if (period == MealPeriod.NIGHT) "甘精胰岛素" else (topInsulinMed ?: "门冬胰岛素")
+        if (dose != null && dose > 0) {
+            medDoseInputText = if (dose % 1f == 0f) dose.toInt().toString() else dose.toString()
+            medNameInputText = name.ifBlank { defaultMedName }
+            medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else if (timing.isBlank() || timing == "睡前") "餐前" else timing
+        } else {
+            medDoseInputText = ""
+            medNameInputText = defaultMedName
+            medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else "餐前"
+        }
+        selectedMedCategory = if (period == MealPeriod.NIGHT) MedCategory.INSULIN else MedicationData.inferCategory(medNameInputText)
+
+        if (!isTimeManuallyEdited) {
+            val key = when (selectedItemType) {
+                ItemType.PRE_MEAL_BG -> "preBG"
+                ItemType.DIET -> "diet"
+                ItemType.EXERCISE -> "exercise"
+                ItemType.MEDICATION -> "med"
+                ItemType.POST_MEAL_BG -> null
             }
-            ItemType.POST_MEAL_BG -> {
-                val list = currentRecord?.getPostMealList(period) ?: emptyList()
-                val targetEntry = if (postMealIdx != null && postMealIdx in list.indices) {
-                    list[postMealIdx]
-                } else {
-                    list.find { com.example.data.PostMealUtils.isTagMatch(it.tag.ifBlank { "餐后2h" }, postMealTagChoice) }
-                }
-                if (targetEntry != null) {
-                    val actualIdx = list.indexOf(targetEntry)
-                    currentPostMealIndex = if (actualIdx >= 0) actualIdx else postMealIdx
-                    bgInputText = String.format(Locale.US, "%.1f", targetEntry.value)
-                    postMealTagChoice = com.example.data.PostMealUtils.normalizeTag(targetEntry.tag.ifBlank { "餐后2h" })
-                    postMealTimeInputText = targetEntry.time.ifBlank { nowTimeStr }
-                    if (!isTimeManuallyEdited) {
-                        currentItemTime = targetEntry.time.ifBlank { nowTimeStr }
-                    }
-                } else {
-                    currentPostMealIndex = null
-                    bgInputText = ""
-                    postMealTimeInputText = nowTimeStr
-                    if (!isTimeManuallyEdited) {
-                        currentItemTime = nowTimeStr
-                    }
-                }
-            }
-            ItemType.DIET -> {
-                val d = when (period) {
-                    MealPeriod.MORNING -> currentRecord?.bfDiet
-                    MealPeriod.LUNCH -> currentRecord?.lunchDiet
-                    MealPeriod.DINNER -> currentRecord?.dinnerDiet
-                    MealPeriod.NIGHT -> currentRecord?.nightDiet
-                } ?: ""
-                dietInputText = d
-                if (!isTimeManuallyEdited) {
-                    currentItemTime = if (d.isNotBlank()) (currentRecord?.getItemTime(period, "diet") ?: nowTimeStr) else nowTimeStr
-                }
-            }
-            ItemType.EXERCISE -> {
-                val ex = when (period) {
-                    MealPeriod.MORNING -> currentRecord?.bfExercise
-                    MealPeriod.LUNCH -> currentRecord?.lunchExercise
-                    MealPeriod.DINNER -> currentRecord?.dinnerExercise
-                    MealPeriod.NIGHT -> currentRecord?.nightExercise
-                } ?: ""
-                val parsed = com.example.data.parseExercise(ex)
-                exerciseNameInputText = parsed.name
-                exerciseDurationInputText = parsed.duration ?: ""
-                if (!isTimeManuallyEdited) {
-                    currentItemTime = if (ex.isNotBlank()) (currentRecord?.getItemTime(period, "exercise") ?: nowTimeStr) else nowTimeStr
-                }
-            }
-            ItemType.MEDICATION -> {
-                val (name, dose, timing) = when (period) {
-                    MealPeriod.MORNING -> Triple(currentRecord?.bfMedName ?: "", currentRecord?.bfInsulin, currentRecord?.bfMedTiming ?: "")
-                    MealPeriod.LUNCH -> Triple(currentRecord?.lunchMedName ?: "", currentRecord?.lunchInsulin, currentRecord?.lunchMedTiming ?: "")
-                    MealPeriod.DINNER -> Triple(currentRecord?.dinnerMedName ?: "", currentRecord?.dinnerInsulin, currentRecord?.dinnerMedTiming ?: "")
-                    MealPeriod.NIGHT -> Triple(currentRecord?.nightMedName ?: "", currentRecord?.bedtimeInsulin, currentRecord?.nightMedTiming ?: "")
-                }
-                if (dose != null && dose > 0) {
-                    medDoseInputText = if (dose % 1f == 0f) dose.toInt().toString() else dose.toString()
-                    medNameInputText = name.ifBlank { if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素" }
-                    medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else if (timing.isBlank() || timing == "睡前") "餐前" else timing
-                    selectedMedCategory = MedicationData.inferCategory(medNameInputText)
-                    if (!isTimeManuallyEdited) {
-                        currentItemTime = currentRecord?.getItemTime(period, "med") ?: nowTimeStr
-                    }
-                } else {
-                    medDoseInputText = ""
-                    medNameInputText = if (period == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
-                    medTimingChoice = if (period == MealPeriod.NIGHT) "睡前" else "餐前"
-                    selectedMedCategory = if (period == MealPeriod.NIGHT) MedCategory.INSULIN else MedicationData.inferCategory(medNameInputText)
-                    if (!isTimeManuallyEdited) {
-                        currentItemTime = nowTimeStr
-                    }
-                }
-            }
+            val existingTime = if (key != null) currentRecord?.getItemTime(period, key) else targetEntry?.time
+            currentItemTime = existingTime?.ifBlank { nowTimeStr } ?: nowTimeStr
+        }
+    }
+
+    fun flushCurrentToDraft(period: MealPeriod) {
+        val draft = periodDrafts.getOrPut(period) { PeriodDraftState() }
+        draft.preBgInputText = preBgInputText
+        draft.postBgInputText = postBgInputText
+        draft.postMealInputs.clear()
+        draft.postMealInputs.putAll(postMealInputs)
+        draft.postMealTimes.clear()
+        draft.postMealTimes.putAll(postMealTimes)
+        draft.dietInputText = dietInputText
+        draft.exerciseNameInputText = exerciseNameInputText
+        draft.exerciseDurationInputText = exerciseDurationInputText
+        draft.medNameInputText = medNameInputText
+        draft.medDoseInputText = medDoseInputText
+        draft.medTimingChoice = medTimingChoice
+        draft.selectedMedCategory = selectedMedCategory
+        draft.postMealTagChoice = postMealTagChoice
+        draft.postMealTimeInputText = postMealTimeInputText
+        draft.currentItemTime = currentItemTime
+        draft.isTimeManuallyEdited = isTimeManuallyEdited
+        draft.currentPostMealIndex = currentPostMealIndex
+        draft.extraDynamicPostMealTabs.clear()
+        draft.extraDynamicPostMealTabs.addAll(extraDynamicPostMealTabs)
+        draft.initialPreBg = initialPreBg
+        draft.initialDiet = initialDiet
+        draft.initialExercise = initialExercise
+        draft.initialMedDose = initialMedDose
+        draft.initialMedName = initialMedName
+        draft.initialMedTiming = initialMedTiming
+        draft.initialPostMealMap.clear()
+        draft.initialPostMealMap.putAll(initialPostMealMap)
+        draft.isLoaded = true
+    }
+
+    fun restoreFromDraft(draft: PeriodDraftState) {
+        preBgInputText = draft.preBgInputText
+        postBgInputText = draft.postBgInputText
+        postMealInputs.clear()
+        postMealInputs.putAll(draft.postMealInputs)
+        postMealTimes.clear()
+        postMealTimes.putAll(draft.postMealTimes)
+        dietInputText = draft.dietInputText
+        exerciseNameInputText = draft.exerciseNameInputText
+        exerciseDurationInputText = draft.exerciseDurationInputText
+        medNameInputText = draft.medNameInputText
+        medDoseInputText = draft.medDoseInputText
+        medTimingChoice = draft.medTimingChoice
+        selectedMedCategory = draft.selectedMedCategory
+        postMealTagChoice = draft.postMealTagChoice
+        postMealTimeInputText = draft.postMealTimeInputText
+        currentItemTime = draft.currentItemTime
+        isTimeManuallyEdited = draft.isTimeManuallyEdited
+        currentPostMealIndex = draft.currentPostMealIndex
+        extraDynamicPostMealTabs.clear()
+        extraDynamicPostMealTabs.addAll(draft.extraDynamicPostMealTabs)
+        initialPreBg = draft.initialPreBg
+        initialDiet = draft.initialDiet
+        initialExercise = draft.initialExercise
+        initialMedDose = draft.initialMedDose
+        initialMedName = draft.initialMedName
+        initialMedTiming = draft.initialMedTiming
+        initialPostMealMap.clear()
+        initialPostMealMap.putAll(draft.initialPostMealMap)
+    }
+
+    fun loadPeriod(period: MealPeriod, postMealIdx: Int? = null) {
+        val draft = periodDrafts[period]
+        if (draft != null && draft.isLoaded) {
+            restoreFromDraft(draft)
+        } else {
+            loadExistingDataForPeriod(selectedDate, period, postMealIdx)
+            flushCurrentToDraft(period)
         }
     }
 
     LaunchedEffect(Unit) {
-        loadExistingData(selectedDate, selectedPeriod, selectedItemType, initialPostMealIndex)
+        loadPeriod(selectedPeriod, initialPostMealIndex)
     }
 
-    // 切换时段联动默认药名与时机及回显已有数据
+    // 切换时段：先保存当前时段的全部临时输入与状态，再无缝恢复或载入新时段数据（绝对保留已填数值）
     fun onPeriodChanged(period: MealPeriod) {
+        if (period == selectedPeriod) return
+        flushCurrentToDraft(selectedPeriod)
         selectedPeriod = period
-        if (period == MealPeriod.NIGHT) {
-            if (medNameInputText.contains("门冬") || medNameInputText == "胰岛素") {
-                medNameInputText = "甘精胰岛素"
-            }
-            medTimingChoice = "睡前"
-        } else {
-            if (medTimingChoice == "睡前") {
-                medTimingChoice = "餐前"
-            }
-        }
-        currentPostMealIndex = null
-        extraDynamicPostMealTabs.removeAll { dynTab ->
-            val list = allRecords.find { it.date == selectedDate }?.getPostMealList(period) ?: emptyList()
-            list.none { com.example.data.PostMealUtils.isTagMatch(it.tag, dynTab) }
-        }
-        isTimeManuallyEdited = false
-        loadExistingData(selectedDate, period, selectedItemType, null)
+        loadPeriod(period, null)
     }
 
     fun onItemTypeChanged(type: ItemType) {
         selectedItemType = type
-        currentPostMealIndex = null
-        extraDynamicPostMealTabs.removeAll { dynTab ->
-            val list = allRecords.find { it.date == selectedDate }?.getPostMealList(selectedPeriod) ?: emptyList()
-            list.none { com.example.data.PostMealUtils.isTagMatch(it.tag, dynTab) }
+        if (type == ItemType.POST_MEAL_BG) {
+            postBgInputText = postMealInputs[postMealTagChoice] ?: ""
         }
-        isTimeManuallyEdited = false
-        loadExistingData(selectedDate, selectedPeriod, type, null)
     }
 
     // 物理返回键优先关闭日期选择器
@@ -424,242 +562,31 @@ fun AddItemDialog(
 
     // 日期与时间选择弹窗（一体化高颜值卡片，彻底消除底部白条，支持自由调整日期与时间）
     if (showDatePicker) {
-        val isDark = AppThemeColors.isDark
-        val initialEpoch = remember(selectedDate) {
-            try {
-                LocalDate.parse(selectedDate).atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
-            } catch (_: Exception) {
-                System.currentTimeMillis()
-            }
-        }
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialEpoch)
-
-        val (initHour, initMin) = remember(currentItemTime) {
-            try {
-                val parts = currentItemTime.split(":")
-                parts[0].toInt() to parts[1].toInt()
-            } catch (_: Exception) {
-                val now = LocalTime.now()
-                now.hour to now.minute
-            }
-        }
-        val timePickerState = rememberTimePickerState(
-            initialHour = initHour,
-            initialMinute = initMin,
-            is24Hour = true
-        )
-
-        var pickerTab by remember { mutableStateOf(0) } // 0: 日期, 1: 时间
-
-        Dialog(
+        DateTimePickerDialog(
+            currentDate = selectedDate,
+            currentTime = currentItemTime,
             onDismissRequest = { showDatePicker = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .clip(RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isDark) Color(0xFF1E293B) else Color.White
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // 1. 顶栏：标题 + 快捷设为现在按钮
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "选择日期与时间",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = TealPrimary.copy(alpha = if (isDark) 0.22f else 0.12f),
-                            modifier = Modifier.clickable {
-                                val nowD = LocalDate.now()
-                                val nowT = LocalTime.now()
-                                selectedDate = nowD.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                                currentItemTime = String.format(Locale.getDefault(), "%02d:%02d", nowT.hour, nowT.minute)
-                                isTimeManuallyEdited = true
-                                showDatePicker = false
-                                currentPostMealIndex = null
-                                loadExistingData(selectedDate, selectedPeriod, selectedItemType, null)
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Text("⚡", fontSize = 11.sp)
-                                Text(
-                                    text = "设为现在",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TealPrimary
-                                )
-                            }
-                        }
-                    }
-
-                    // 2. 日期 / 时间 选项卡切换
-                    val tempDateStr = datePickerState.selectedDateMillis?.let {
-                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(DateTimeFormatter.ofPattern("MM-dd"))
-                    } ?: selectedDate.substring(5)
-                    val tempTimeStr = String.format(Locale.getDefault(), "%02d:%02d", timePickerState.hour, timePickerState.minute)
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        listOf(
-                            0 to "📅 日期 ($tempDateStr)",
-                            1 to "🕒 时间 ($tempTimeStr)"
-                        ).forEach { (idx, label) ->
-                            val isSel = pickerTab == idx
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSel) TealPrimary else Color.Transparent,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { pickerTab = idx }
-                            ) {
-                                Box(
-                                    modifier = Modifier.padding(vertical = 7.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 3. 内容区：DatePicker 或 TimePicker
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 310.dp, max = 370.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (pickerTab == 0) {
-                            DatePicker(
-                                state = datePickerState,
-                                colors = DatePickerDefaults.colors(
-                                    containerColor = Color.Transparent,
-                                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                                    headlineContentColor = MaterialTheme.colorScheme.onSurface,
-                                    weekdayContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    subheadContentColor = MaterialTheme.colorScheme.onSurface,
-                                    navigationContentColor = MaterialTheme.colorScheme.onSurface,
-                                    yearContentColor = MaterialTheme.colorScheme.onSurface,
-                                    currentYearContentColor = TealPrimary,
-                                    selectedYearContentColor = Color.White,
-                                    selectedYearContainerColor = TealPrimary,
-                                    dayContentColor = MaterialTheme.colorScheme.onSurface,
-                                    selectedDayContentColor = Color.White,
-                                    selectedDayContainerColor = TealPrimary,
-                                    todayDateBorderColor = TealPrimary,
-                                    todayContentColor = TealPrimary,
-                                    dividerColor = Color.Transparent
-                                ),
-                                title = null,
-                                headline = null,
-                                showModeToggle = false,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TimePicker(
-                                    state = timePickerState,
-                                    colors = TimePickerDefaults.colors(
-                                        clockDialColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        clockDialSelectedContentColor = Color.White,
-                                        clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
-                                        selectorColor = TealPrimary,
-                                        containerColor = Color.Transparent,
-                                        periodSelectorBorderColor = TealPrimary,
-                                        periodSelectorSelectedContainerColor = TealPrimary,
-                                        periodSelectorUnselectedContainerColor = Color.Transparent,
-                                        periodSelectorSelectedContentColor = Color.White,
-                                        periodSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
-                                        timeSelectorSelectedContainerColor = TealPrimary.copy(alpha = 0.18f),
-                                        timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        timeSelectorSelectedContentColor = TealPrimary,
-                                        timeSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface
-                                    ),
-                                    layoutType = TimePickerLayoutType.Vertical
-                                )
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    )
-
-                    // 4. 底部操作按钮栏（同卡片容器，背景一致，绝无白条！）
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = { showDatePicker = false }
-                        ) {
-                            Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                datePickerState.selectedDateMillis?.let { millis ->
-                                    val ld = Instant.ofEpochMilli(millis).atZone(ZoneId.of("UTC")).toLocalDate()
-                                    selectedDate = ld.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                                }
-                                currentItemTime = String.format(Locale.getDefault(), "%02d:%02d", timePickerState.hour, timePickerState.minute)
-                                isTimeManuallyEdited = true
-                                currentPostMealIndex = null
-                                loadExistingData(selectedDate, selectedPeriod, selectedItemType, null)
-                                showDatePicker = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("确定", fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
+            onConfirm = { chosenDate, chosenTime ->
+                if (chosenDate != selectedDate) {
+                    selectedDate = chosenDate
+                    periodDrafts.clear()
+                    loadPeriod(selectedPeriod, null)
                 }
+                currentItemTime = chosenTime
+                isTimeManuallyEdited = true
+                showDatePicker = false
+            },
+            onSetToNow = { chosenDate, chosenTime ->
+                if (chosenDate != selectedDate) {
+                    selectedDate = chosenDate
+                    periodDrafts.clear()
+                    loadPeriod(selectedPeriod, null)
+                }
+                currentItemTime = chosenTime
+                isTimeManuallyEdited = false
+                showDatePicker = false
             }
-        }
+        )
     }
 
     val currentRecord = remember(allRecords, selectedDate) { allRecords.find { it.date == selectedDate } }
@@ -695,126 +622,199 @@ fun AddItemDialog(
         return if (idx >= 0) idx to list[idx] else null
     }
 
-    val hasExistingData = when (selectedItemType) {
-        ItemType.PRE_MEAL_BG -> {
-            val v = when (selectedPeriod) {
-                MealPeriod.MORNING -> currentRecord?.fastingBG ?: currentRecord?.preBfBG
-                MealPeriod.LUNCH -> currentRecord?.preLunchBG
-                MealPeriod.DINNER -> currentRecord?.preDinnerBG
-                MealPeriod.NIGHT -> currentRecord?.preNightBG
-            }
-            v != null
+    val currentPreBgFloat = preBgInputText.trim().toFloatOrNull()
+    val isPreBgModified = if (initialPreBg != null) {
+        currentPreBgFloat != initialPreBg
+    } else {
+        currentPreBgFloat != null && currentPreBgFloat in 0.5f..35.0f
+    }
+
+    val currentDietTrimmed = dietInputText.trim()
+    val isDietModified = currentDietTrimmed != initialDiet.trim()
+
+    val currentMedDoseFloat = medDoseInputText.trim().toFloatOrNull()
+    val isMedModified = if (initialMedDose != null) {
+        currentMedDoseFloat != initialMedDose ||
+                (currentMedDoseFloat != null && currentMedDoseFloat > 0f && (medNameInputText.trim() != initialMedName.trim() || medTimingChoice != initialMedTiming))
+    } else {
+        currentMedDoseFloat != null && currentMedDoseFloat > 0f
+    }
+
+    val formattedExercise = when {
+        exerciseNameInputText.isNotBlank() && exerciseDurationInputText.isNotBlank() ->
+            "${exerciseNameInputText.trim()} ${exerciseDurationInputText.trim()}分钟"
+        exerciseNameInputText.isNotBlank() -> exerciseNameInputText.trim()
+        exerciseDurationInputText.isNotBlank() -> "${exerciseDurationInputText.trim()}分钟"
+        else -> ""
+    }
+    val isExerciseModified = formattedExercise != initialExercise.trim()
+
+    val isPostMealModified = run {
+        val currentValidPostMeals = postMealInputs.filter { (_, v) ->
+            v.trim().isNotEmpty() && (v.trim().toFloatOrNull()?.let { it in 0.5f..35.0f } == true)
         }
-        ItemType.POST_MEAL_BG -> {
-            currentPostMealIndex != null && currentPostMealIndex in postMealList.indices
-        }
-        ItemType.DIET -> {
-            val d = when (selectedPeriod) {
-                MealPeriod.MORNING -> currentRecord?.bfDiet
-                MealPeriod.LUNCH -> currentRecord?.lunchDiet
-                MealPeriod.DINNER -> currentRecord?.dinnerDiet
-                MealPeriod.NIGHT -> currentRecord?.nightDiet
+        if (currentValidPostMeals.keys != initialPostMealMap.keys) {
+            true
+        } else {
+            currentValidPostMeals.any { (tag, vStr) ->
+                vStr.trim().toFloatOrNull() != initialPostMealMap[tag]
             }
-            !d.isNullOrBlank()
-        }
-        ItemType.EXERCISE -> {
-            val e = when (selectedPeriod) {
-                MealPeriod.MORNING -> currentRecord?.bfExercise
-                MealPeriod.LUNCH -> currentRecord?.lunchExercise
-                MealPeriod.DINNER -> currentRecord?.dinnerExercise
-                MealPeriod.NIGHT -> currentRecord?.nightExercise
-            }
-            !e.isNullOrBlank()
-        }
-        ItemType.MEDICATION -> {
-            val dose = when (selectedPeriod) {
-                MealPeriod.MORNING -> currentRecord?.bfInsulin
-                MealPeriod.LUNCH -> currentRecord?.lunchInsulin
-                MealPeriod.DINNER -> currentRecord?.dinnerInsulin
-                MealPeriod.NIGHT -> currentRecord?.bedtimeInsulin
-            }
-            dose != null && dose > 0
         }
     }
 
-    val isInputEmpty = when (selectedItemType) {
-        ItemType.PRE_MEAL_BG, ItemType.POST_MEAL_BG -> bgInputText.trim().isEmpty()
-        ItemType.DIET -> dietInputText.trim().isEmpty()
-        ItemType.EXERCISE -> exerciseNameInputText.trim().isEmpty() && exerciseDurationInputText.trim().isEmpty()
-        ItemType.MEDICATION -> medDoseInputText.trim().isEmpty()
+    val isPreBgValid = preBgInputText.trim().isEmpty() || (currentPreBgFloat != null && currentPreBgFloat in 0.5f..35.0f)
+    val isMedValid = medDoseInputText.trim().isEmpty() || (currentMedDoseFloat != null && currentMedDoseFloat > 0f)
+    val isPostMealValid = postMealInputs.values.all { it.trim().isEmpty() || (it.trim().toFloatOrNull()?.let { v -> v in 0.5f..35.0f } == true) }
+
+    val hasAnyModification = isPreBgModified || isDietModified || isMedModified || isExerciseModified || isPostMealModified
+    val currentPeriodCanSubmit = hasAnyModification && isPreBgValid && isMedValid && isPostMealValid
+    val canSubmit = currentPeriodCanSubmit || periodDrafts.values.any { it.isModified() }
+
+    val hasExistingDataForPeriod = remember(currentRecord, selectedPeriod) {
+        currentRecord?.let { rec ->
+            when (selectedPeriod) {
+                MealPeriod.MORNING -> rec.hasMorningData
+                MealPeriod.LUNCH -> rec.hasLunchData
+                MealPeriod.DINNER -> rec.hasDinnerData
+                MealPeriod.NIGHT -> rec.hasNightData
+            }
+        } ?: false
     }
 
-    val isInputValid = when (selectedItemType) {
-        ItemType.PRE_MEAL_BG -> {
-            val v = bgInputText.trim().toFloatOrNull()
-            v != null && v in 0.5f..35.0f
+    val modifiedItemsCount = listOf(
+        isPreBgModified,
+        isDietModified,
+        isMedModified,
+        isExerciseModified,
+        isPostMealModified
+    ).count { it }
+
+    val totalModifiedCount = run {
+        val otherModified = periodDrafts.filterKeys { it != selectedPeriod }.values.count { it.isModified() }
+        modifiedItemsCount + otherModified
+    }
+
+    val submitButtonText = when {
+        hasExistingDataForPeriod -> {
+            if (totalModifiedCount > 1) "保存修改 (${totalModifiedCount}项)" else "保存修改"
         }
-        ItemType.POST_MEAL_BG -> {
-            val v = bgInputText.trim().toFloatOrNull()
-            v != null && v in 0.5f..35.0f
-        }
-        ItemType.MEDICATION -> {
-            val d = medDoseInputText.trim().toFloatOrNull()
-            d != null && d > 0f
-        }
-        ItemType.DIET -> {
-            dietInputText.trim().isNotBlank()
-        }
-        ItemType.EXERCISE -> {
-            exerciseNameInputText.trim().isNotBlank() || exerciseDurationInputText.trim().isNotBlank()
+        else -> {
+            if (totalModifiedCount > 1) "保存 (${totalModifiedCount}项)" else "保存条目"
         }
     }
 
-    val canSubmit = isInputValid || (hasExistingData && isInputEmpty)
+    fun doesTabHaveData(itemType: ItemType): Boolean {
+        return when (itemType) {
+            ItemType.PRE_MEAL_BG -> preBgInputText.trim().isNotEmpty()
+            ItemType.DIET -> dietInputText.trim().isNotEmpty()
+            ItemType.MEDICATION -> medDoseInputText.trim().isNotEmpty()
+            ItemType.POST_MEAL_BG -> postBgInputText.trim().isNotEmpty() || postMealInputs.values.any { it.trim().isNotEmpty() }
+            ItemType.EXERCISE -> exerciseNameInputText.trim().isNotEmpty() || exerciseDurationInputText.trim().isNotEmpty()
+        }
+    }
 
     fun submit(keepOpen: Boolean) {
         if (!canSubmit) return
-        val formattedExercise = when {
-            exerciseNameInputText.isNotBlank() && exerciseDurationInputText.isNotBlank() ->
-                "${exerciseNameInputText.trim()} ${exerciseDurationInputText.trim()}分钟"
-            exerciseNameInputText.isNotBlank() -> exerciseNameInputText.trim()
-            exerciseDurationInputText.isNotBlank() -> "${exerciseDurationInputText.trim()}分钟"
-            else -> ""
+        flushCurrentToDraft(selectedPeriod)
+
+        val periodsToSave = periodDrafts.filter { (p, draft) ->
+            p == selectedPeriod || draft.isModified()
         }
-        val recordTime = currentItemTime.trim().ifBlank { nowTimeStr }
-        val targetIdx = if (selectedItemType == ItemType.POST_MEAL_BG) {
-            currentPostMealIndex
-        } else null
+        if (periodsToSave.isEmpty()) return
 
-        val actualTiming = if (selectedPeriod == MealPeriod.NIGHT) "睡前" else medTimingChoice
+        val entries = periodsToSave.entries.toList()
+        entries.forEachIndexed { index, (p, draft) ->
+            val isLast = index == entries.lastIndex
+            val recordTime = draft.currentItemTime.trim().ifBlank { nowTimeStr }
+            val actualTiming = if (p == MealPeriod.NIGHT) "睡前" else draft.medTimingChoice
 
-        onSaveItem(
-            selectedDate,
-            selectedPeriod,
-            selectedItemType,
-            bgInputText.trim().toFloatOrNull(),
-            dietInputText.trim(),
-            medNameInputText.trim(),
-            medDoseInputText.trim().toFloatOrNull(),
-            actualTiming,
-            postMealTagChoice,
-            recordTime,
-            formattedExercise,
-            targetIdx,
-            keepOpen
-        )
+            if (p == selectedPeriod && selectedItemType == ItemType.POST_MEAL_BG) {
+                draft.postMealInputs[draft.postMealTagChoice] = postBgInputText
+                draft.postMealTimes[draft.postMealTagChoice] = recordTime
+            }
+
+            val postMealEntriesList = mutableListOf<com.example.data.PostMealEntry>()
+            draft.postMealInputs.forEach { (tag, valStr) ->
+                val v = valStr.trim().toFloatOrNull()
+                if (v != null && v in 0.5f..35.0f) {
+                    val t = draft.postMealTimes[tag]?.ifBlank { recordTime } ?: recordTime
+                    postMealEntriesList.add(com.example.data.PostMealEntry(v, t, tag))
+                }
+            }
+
+            val curPreBgFloat = draft.preBgInputText.trim().toFloatOrNull()
+            val preBgMod = if (draft.initialPreBg != null) {
+                curPreBgFloat != draft.initialPreBg
+            } else {
+                curPreBgFloat != null && curPreBgFloat in 0.5f..35.0f
+            }
+            val dietMod = draft.dietInputText.trim() != draft.initialDiet.trim()
+            val curMedDoseFloat = draft.medDoseInputText.trim().toFloatOrNull()
+            val medMod = if (draft.initialMedDose != null) {
+                curMedDoseFloat != draft.initialMedDose ||
+                        (curMedDoseFloat != null && curMedDoseFloat > 0f && (draft.medNameInputText.trim() != draft.initialMedName.trim() || draft.medTimingChoice != draft.initialMedTiming))
+            } else {
+                curMedDoseFloat != null && curMedDoseFloat > 0f
+            }
+            val formattedEx = when {
+                draft.exerciseNameInputText.isNotBlank() && draft.exerciseDurationInputText.isNotBlank() ->
+                    "${draft.exerciseNameInputText.trim()} ${draft.exerciseDurationInputText.trim()}分钟"
+                draft.exerciseNameInputText.isNotBlank() -> draft.exerciseNameInputText.trim()
+                draft.exerciseDurationInputText.isNotBlank() -> "${draft.exerciseDurationInputText.trim()}分钟"
+                else -> ""
+            }
+            val exMod = formattedEx != draft.initialExercise.trim()
+            val postMealMod = run {
+                val currentValidPostMeals = draft.postMealInputs.filter { (_, v) ->
+                    v.trim().isNotEmpty() && (v.trim().toFloatOrNull()?.let { it in 0.5f..35.0f } == true)
+                }
+                if (currentValidPostMeals.keys != draft.initialPostMealMap.keys) {
+                    true
+                } else {
+                    currentValidPostMeals.any { (tag, vStr) ->
+                        vStr.trim().toFloatOrNull() != draft.initialPostMealMap[tag]
+                    }
+                }
+            }
+
+            onSaveItem(
+                selectedDate,
+                p,
+                curPreBgFloat,
+                preBgMod,
+                draft.dietInputText.trim(),
+                dietMod,
+                draft.medNameInputText.trim(),
+                curMedDoseFloat,
+                actualTiming,
+                medMod,
+                formattedEx,
+                exMod,
+                postMealEntriesList,
+                postMealMod,
+                recordTime,
+                draft.isTimeManuallyEdited,
+                if (isLast) keepOpen else true
+            )
+        }
+
         if (keepOpen) {
-            bgInputText = ""
-            dietInputText = ""
-            medDoseInputText = ""
-            exerciseNameInputText = ""
-            exerciseDurationInputText = ""
-            currentPostMealIndex = null
-            extraDynamicPostMealTabs.clear()
-            isTimeManuallyEdited = false
-            val nowT = LocalTime.now()
-            currentItemTime = String.format(Locale.getDefault(), "%02d:%02d", nowT.hour, nowT.minute)
+            periodDrafts.clear()
+            loadPeriod(selectedPeriod, null)
         }
     }
 
+
+    ImageSourcePickerDialog(
+        visible = showImageSourcePicker,
+        onDismiss = { showImageSourcePicker = false },
+        onTakePhoto = { triggerCamera() },
+        onPickGallery = { galleryLauncher.launch("image/*") }
+    )
+
     FrostedGlassDialogOverlay(
         onDismissRequest = onDismiss,
-        dismissOnBackPress = !showDatePicker
+        dismissOnBackPress = !showDatePicker && !showImageSourcePicker
     ) { dismissWithAnimation ->
         val isDark = AppThemeColors.isDark
         Card(
@@ -822,15 +822,12 @@ fun AddItemDialog(
                 .fillMaxWidth(0.92f)
                 .clickable(enabled = false) {}
                 .testTag("add_item_dialog"),
-            shape = RoundedCornerShape(22.dp),
+            shape = AppleCardShape,
             colors = CardDefaults.cardColors(
-                containerColor = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f)
+                containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
             ),
-            border = BorderStroke(
-                1.dp,
-                if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+            border = appleCardBorder(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -852,17 +849,23 @@ fun AddItemDialog(
                         Text(
                             text = "记一笔",
                             fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.38).sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
                         )
                         // 可点击更换日期的轻量胶囊
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = ApplePillShape,
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.clickable { showDatePicker = true }
+                            border = appleCardBorder(),
+                            modifier = Modifier
+                                .clip(ApplePillShape)
+                                .applePressEffect(0.95f)
+                                .clickable { showDatePicker = true }
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
@@ -877,7 +880,9 @@ fun AddItemDialog(
                                     text = "$datePrefix $currentItemTime",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    letterSpacing = (-0.12).sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
                                 )
                             }
                         }
@@ -885,7 +890,10 @@ fun AddItemDialog(
 
                     IconButton(
                         onClick = { dismissWithAnimation() },
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .applePressEffect(0.92f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -897,108 +905,118 @@ fun AddItemDialog(
                 }
 
                 // 2. 时段切换分段胶囊（1 行极简设计，默认匹配当前系统时间，平滑过渡动画）
-                Row(
+                MealPeriodSelectorCapsule(
+                    selectedPeriod = selectedPeriod,
+                    onPeriodSelected = { onPeriodChanged(it) }
+                )
+
+                // 3. 条目类型切换分段胶囊（Apple 胶囊轨道与物理滑块动画）
+                val itemTypes = remember { ItemType.entries }
+                val selectedTypeIndex = itemTypes.indexOf(selectedItemType).coerceAtLeast(0)
+                val animatedTypeIndex by animateFloatAsState(
+                    targetValue = selectedTypeIndex.toFloat(),
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "item_type_slider"
+                )
+
+                val trackBg = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA).copy(alpha = 0.6f)
+                val trackBorderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)
+
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        .height(38.dp)
+                        .clip(AppleSegmentTrackShape)
+                        .background(trackBg)
+                        .border(BorderStroke(1.dp, trackBorderColor), AppleSegmentTrackShape)
+                        .padding(3.dp)
                 ) {
-                    MealPeriod.entries.forEach { period ->
-                        val isSelected = period == selectedPeriod
-                        val periodTheme = when (period) {
-                            MealPeriod.MORNING -> AppThemeColors.breakfastColor
-                            MealPeriod.LUNCH -> AppThemeColors.lunchColor
-                            MealPeriod.DINNER -> AppThemeColors.dinnerColor
-                            MealPeriod.NIGHT -> AppThemeColors.bedtimeColor
-                        }
-                        val animBg by animateColorAsState(
-                            targetValue = if (isSelected) periodTheme else Color.Transparent,
-                            animationSpec = tween(220),
-                            label = "period_chip_bg"
-                        )
-                        val animText by animateColorAsState(
-                            targetValue = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = tween(220),
-                            label = "period_chip_text"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(animBg)
-                                .clickable { onPeriodChanged(period) }
-                                .padding(vertical = 7.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "${period.iconText} ${period.title}",
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = animText
+                    val tabWidth = maxWidth / itemTypes.size
+
+                    // 主题色滑块（与全局选项卡统一圆角）
+                    Box(
+                        modifier = Modifier
+                            .offset(x = tabWidth * animatedTypeIndex)
+                            .width(tabWidth)
+                            .fillMaxHeight()
+                            .clip(AppleSegmentThumbShape)
+                            .background(TealPrimary)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        itemTypes.forEachIndexed { index, itemType ->
+                            val isSelected = itemType == selectedItemType
+                            val (icon, label) = when (itemType) {
+                                ItemType.PRE_MEAL_BG -> "🩸" to if (selectedPeriod == MealPeriod.MORNING) "空腹" else if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前"
+                                ItemType.DIET -> "🍽️" to "用餐"
+                                ItemType.MEDICATION -> "💊" to "用药"
+                                ItemType.POST_MEAL_BG -> "📈" to "餐后"
+                                ItemType.EXERCISE -> "🏃" to "运动"
+                            }
+                            val animText by animateColorAsState(
+                                targetValue = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                animationSpec = tween(200),
+                                label = "type_chip_text_$index"
                             )
+                            val hasData = doesTabHaveData(itemType)
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(AppleSegmentThumbShape)
+                                    .applePressEffect(0.96f)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { onItemTypeChanged(itemType) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = icon,
+                                        fontSize = 11.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(2.5.dp))
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                        letterSpacing = (-0.224).sp,
+                                        color = animText,
+                                        style = TextStyle(
+                                            platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                        )
+                                    )
+                                    if (hasData && !isSelected) {
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(TealPrimary)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                // 3. 条目类型切换分段胶囊（1 行 5 项极简设计，平滑过渡动画）
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    ItemType.entries.forEach { itemType ->
-                        val isSelected = itemType == selectedItemType
-                        val (icon, label) = when (itemType) {
-                            ItemType.PRE_MEAL_BG -> "🩸" to if (selectedPeriod == MealPeriod.MORNING) "空腹" else if (selectedPeriod == MealPeriod.NIGHT) "睡前" else "餐前"
-                            ItemType.DIET -> "🍽️" to "用餐"
-                            ItemType.MEDICATION -> "💊" to "用药"
-                            ItemType.POST_MEAL_BG -> "📈" to "餐后"
-                            ItemType.EXERCISE -> "🏃" to "运动"
-                        }
-                        val animBg by animateColorAsState(
-                            targetValue = if (isSelected) TealPrimary else Color.Transparent,
-                            animationSpec = tween(220),
-                            label = "type_chip_bg"
-                        )
-                        val animText by animateColorAsState(
-                            targetValue = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = tween(220),
-                            label = "type_chip_text"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(animBg)
-                                .clickable { onItemTypeChanged(itemType) }
-                                .padding(vertical = 7.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "$icon $label",
-                                fontSize = 11.5.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = animText
-                            )
-                        }
-                    }
-                }
-
-                // 4. 内容表单区（带平滑滑动淡入淡出过渡动画）
+                // 4. 内容表单区（切换分类时轻量淡入淡出，切换时段时输入框稳固无位移，杜绝过度动画）
                 AnimatedContent(
                     targetState = selectedItemType,
                     transitionSpec = {
-                        (fadeIn(animationSpec = tween(220)) + slideInHorizontally(
-                            animationSpec = tween(220),
-                            initialOffsetX = { fullWidth -> (fullWidth * 0.08f).toInt() }
-                        )).togetherWith(
-                            fadeOut(animationSpec = tween(180))
-                        )
+                        fadeIn(animationSpec = tween(140)) togetherWith fadeOut(animationSpec = tween(100))
                     },
                     label = "form_content_animation"
                 ) { currentItemType ->
@@ -1012,8 +1030,8 @@ fun AddItemDialog(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 OutlinedTextField(
-                                    value = bgInputText,
-                                    onValueChange = { bgInputText = it },
+                                    value = preBgInputText,
+                                    onValueChange = { preBgInputText = it.replace('。', '.').replace('，', '.').replace(" ", "") },
                                     label = { Text(bgTitle) },
                                     placeholder = { Text("例: 6.0") },
                                     trailingIcon = { Text("mmol/L", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) },
@@ -1028,28 +1046,11 @@ fun AddItemDialog(
                                 )
 
                                 // 微调步长按钮
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.clickable {
-                                             val cur = bgInputText.toFloatOrNull() ?: 6.0f
-                                            bgInputText = String.format(Locale.US, "%.1f", (cur - 0.1f).coerceAtLeast(0.5f))
-                                        }
-                                    ) {
-                                        Text("-0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
-                                    }
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.clickable {
-                                            val cur = bgInputText.toFloatOrNull() ?: 6.0f
-                                            bgInputText = String.format(Locale.US, "%.1f", cur + 0.1f)
-                                        }
-                                    ) {
-                                        Text("+0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
-                                    }
-                                }
+                                StepAdjustButtons(
+                                    currentValue = preBgInputText,
+                                    onValueChange = { preBgInputText = it },
+                                    defaultValue = 6.0f
+                                )
                             }
                         }
                     }
@@ -1067,9 +1068,10 @@ fun AddItemDialog(
                                 allPostMealTabs.forEach { tab ->
                                     val isSelected = com.example.data.PostMealUtils.isTagMatch(postMealTagChoice, tab)
                                     val match = findEntryForTab(tab, postMealList)
-                                    val hasData = match != null
+                                    val tabVal = postMealInputs[tab]?.trim()?.toFloatOrNull()
+                                    val hasData = (tabVal != null && tabVal in 0.5f..35.0f) || match != null
 
-                                    val bgColor = when {
+                                    val targetBg = when {
                                         isSelected -> TealPrimary
                                         hasData -> if (AppThemeColors.isDark) Color(0xFF134E4A).copy(alpha = 0.65f) else Color(0xFFE6F4EA)
                                         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -1079,34 +1081,52 @@ fun AddItemDialog(
                                         hasData -> BorderStroke(1.dp, if (AppThemeColors.isDark) Color(0xFF2DD4BF).copy(alpha = 0.55f) else TealPrimary.copy(alpha = 0.5f))
                                         else -> null
                                     }
-                                    val textColor = when {
+                                    val targetText = when {
                                         isSelected -> Color.White
                                         hasData -> if (AppThemeColors.isDark) Color(0xFF2DD4BF) else TealPrimary
                                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                                     }
+                                    val animBg by animateColorAsState(
+                                        targetValue = targetBg,
+                                        animationSpec = tween(220),
+                                        label = "post_meal_tab_bg"
+                                    )
+                                    val animText by animateColorAsState(
+                                        targetValue = targetText,
+                                        animationSpec = tween(220),
+                                        label = "post_meal_tab_text"
+                                    )
+                                    val tabScale by animateFloatAsState(
+                                        targetValue = if (isSelected) 1.05f else 1f,
+                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                        label = "post_meal_tab_scale"
+                                    )
 
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = bgColor,
+                                        color = animBg,
                                         border = border,
-                                        modifier = Modifier.clickable {
-                                            val prevChoice = postMealTagChoice
-                                            postMealTagChoice = tab
-                                            if (match != null) {
-                                                currentPostMealIndex = match.first
-                                                bgInputText = String.format(Locale.US, "%.1f", match.second.value)
-                                                postMealTimeInputText = match.second.time.ifBlank { nowTimeStr }
-                                            } else {
-                                                currentPostMealIndex = null
-                                                bgInputText = ""
-                                                postMealTimeInputText = nowTimeStr
+                                        modifier = Modifier
+                                            .graphicsLayer {
+                                                scaleX = tabScale
+                                                scaleY = tabScale
                                             }
-                                            // 若离开的上一个选项卡是本次临时新增且未保存数据的，切换后立即清除
-                                            if (prevChoice != tab && extraDynamicPostMealTabs.contains(prevChoice) &&
-                                                postMealList.none { com.example.data.PostMealUtils.isTagMatch(it.tag, prevChoice) }) {
-                                                extraDynamicPostMealTabs.remove(prevChoice)
+                                            .clickable {
+                                                val prevChoice = postMealTagChoice
+                                                if (prevChoice != tab) {
+                                                    postMealInputs[prevChoice] = postBgInputText
+                                                }
+                                                postMealTagChoice = tab
+                                                if (match != null) {
+                                                    currentPostMealIndex = match.first
+                                                    postBgInputText = postMealInputs[tab] ?: String.format(Locale.US, "%.1f", match.second.value)
+                                                    postMealTimeInputText = postMealTimes[tab] ?: match.second.time.ifBlank { nowTimeStr }
+                                                } else {
+                                                    currentPostMealIndex = null
+                                                    postBgInputText = postMealInputs[tab] ?: ""
+                                                    postMealTimeInputText = postMealTimes[tab] ?: nowTimeStr
+                                                }
                                             }
-                                        }
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
@@ -1125,7 +1145,7 @@ fun AddItemDialog(
                                                 text = tab,
                                                 fontSize = 11.5.sp,
                                                 fontWeight = if (isSelected || hasData) FontWeight.Bold else FontWeight.Medium,
-                                                color = textColor
+                                                color = animText
                                             )
                                         }
                                     }
@@ -1137,6 +1157,9 @@ fun AddItemDialog(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                                     border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
                                     modifier = Modifier.clickable {
+                                        val prevChoice = postMealTagChoice
+                                        postMealInputs[prevChoice] = postBgInputText
+
                                         val hours = allPostMealTabs.mapNotNull { t ->
                                             val m = Regex("""^餐后(\d+)h$""").find(com.example.data.PostMealUtils.normalizeTag(t))
                                             m?.groupValues?.get(1)?.toIntOrNull()
@@ -1148,7 +1171,7 @@ fun AddItemDialog(
                                         }
                                         postMealTagChoice = nextTab
                                         currentPostMealIndex = null
-                                        bgInputText = ""
+                                        postBgInputText = ""
                                         postMealTimeInputText = nowTimeStr
                                     }
                                 ) {
@@ -1180,8 +1203,12 @@ fun AddItemDialog(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 OutlinedTextField(
-                                    value = bgInputText,
-                                    onValueChange = { bgInputText = it },
+                                    value = postBgInputText,
+                                    onValueChange = {
+                                        val clean = it.replace('。', '.').replace('，', '.').replace(" ", "")
+                                        postBgInputText = clean
+                                        postMealInputs[postMealTagChoice] = clean
+                                    },
                                     label = { Text("餐后血糖数值") },
                                     placeholder = { Text("例: 7.8") },
                                     trailingIcon = { Text("mmol/L", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) },
@@ -1195,28 +1222,14 @@ fun AddItemDialog(
                                     modifier = Modifier.weight(1f)
                                 )
 
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.clickable {
-                                            val cur = bgInputText.toFloatOrNull() ?: 7.5f
-                                            bgInputText = String.format(Locale.US, "%.1f", (cur - 0.1f).coerceAtLeast(0.5f))
-                                        }
-                                    ) {
-                                        Text("-0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
-                                    }
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.clickable {
-                                            val cur = bgInputText.toFloatOrNull() ?: 7.5f
-                                            bgInputText = String.format(Locale.US, "%.1f", cur + 0.1f)
-                                        }
-                                    ) {
-                                        Text("+0.1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp))
-                                    }
-                                }
+                                StepAdjustButtons(
+                                    currentValue = postBgInputText,
+                                    onValueChange = {
+                                        postBgInputText = it
+                                        postMealInputs[postMealTagChoice] = it
+                                    },
+                                    defaultValue = 7.5f
+                                )
                             }
 
                             // 标准参考提示（测量时间已由系统根据记录点自动标记）
@@ -1266,7 +1279,7 @@ fun AddItemDialog(
 
                             OutlinedTextField(
                                 value = exerciseDurationInputText,
-                                onValueChange = { exerciseDurationInputText = it },
+                                onValueChange = { exerciseDurationInputText = it.filter { char -> char.isDigit() } },
                                 label = { Text("运动时长") },
                                 placeholder = { Text("例: 30") },
                                 trailingIcon = {
@@ -1297,75 +1310,26 @@ fun AddItemDialog(
 
                         val unit = MedicationData.detectUnit(medNameInputText, selectedMedCategory)
 
-                        // 综合候选药物列表：优先按历史频次排序置顶常用药，同时包含该类别基础药，通用占位放末尾
+                        // 综合候选药物列表：优先按真实历史使用频次排序置顶（高频使用的“胰岛素”或具体药名高居前列）
                         val currentMedList = remember(selectedMedCategory, allRecords, medFrequencyMap) {
-                            val baseList = if (selectedMedCategory == MedCategory.INSULIN) {
-                                MedicationData.commonInsulinMeds
-                            } else {
-                                MedicationData.commonOralMeds
-                            }
-                            val historyMeds = allRecords.flatMap { record ->
-                                listOf(record.bfMedName, record.lunchMedName, record.dinnerMedName, record.nightMedName)
-                            }.filter { it.isNotBlank() && it != "胰岛素" && it != "口服药" }
-                            .distinct()
-                            .filter { med ->
-                                MedicationData.inferCategory(med) == selectedMedCategory && med !in baseList
-                            }
-
-                            val combined = (baseList + historyMeds).distinct()
-                            combined.sortedWith(
-                                compareByDescending<String> { med ->
-                                    if (med == "胰岛素" || med == "口服药") -1 else (medFrequencyMap[med] ?: 0)
-                                }.thenBy { med ->
-                                    val idx = baseList.indexOf(med)
-                                    if (idx >= 0) idx else 999
-                                }
-                            )
+                            MedicationData.getMedicationOptions(selectedMedCategory, allRecords, medFrequencyMap)
                         }
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // 1. 药物大类选择：胰岛素 vs 口服药 两个按钮
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .padding(2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                listOf(MedCategory.INSULIN, MedCategory.ORAL).forEach { cat ->
-                                    val isSel = selectedMedCategory == cat
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isSel) TealPrimary else Color.Transparent,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable {
-                                                selectedMedCategory = cat
-                                                if (cat == MedCategory.INSULIN && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonOralMeds)) {
-                                                    medNameInputText = if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
-                                                } else if (cat == MedCategory.ORAL && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonInsulinMeds)) {
-                                                    medNameInputText = "二甲双胍"
-                                                }
-                                            }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(vertical = 7.dp),
-                                            horizontalArrangement = Arrangement.Center,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(text = cat.icon, fontSize = 13.sp)
-                                            Spacer(modifier = Modifier.width(5.dp))
-                                            Text(
-                                                text = cat.label,
-                                                fontSize = 12.5.sp,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                                                color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
+                            // 1. 药物大类选择：胰岛素 vs 口服药 vs GLP-1/针剂 三个按钮
+                            MedCategorySelectorCapsule(
+                                selectedCategory = selectedMedCategory,
+                                onCategorySelected = { cat ->
+                                    selectedMedCategory = cat
+                                    if (cat == MedCategory.INSULIN && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonOralMeds || medNameInputText in MedicationData.commonGLP1Meds)) {
+                                        medNameInputText = if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素"
+                                    } else if (cat == MedCategory.ORAL && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonInsulinMeds || medNameInputText in MedicationData.commonGLP1Meds)) {
+                                        medNameInputText = "二甲双胍"
+                                    } else if (cat == MedCategory.GLP1 && (medNameInputText.isBlank() || medNameInputText in MedicationData.commonInsulinMeds || medNameInputText in MedicationData.commonOralMeds)) {
+                                        medNameInputText = "司美格鲁肽"
                                     }
                                 }
-                            }
+                            )
 
                             // 2. 药名输入框（向左收缩） + 拍照识药按钮（右侧平齐）
                             Row(
@@ -1410,7 +1374,11 @@ fun AddItemDialog(
                                                 Box(modifier = Modifier.weight(1f)) {
                                                     if (medNameInputText.isEmpty()) {
                                                         Text(
-                                                            text = if (selectedMedCategory == MedCategory.INSULIN) "例: 门冬胰岛素" else "例: 二甲双胍",
+                                                            text = when (selectedMedCategory) {
+                                                                MedCategory.INSULIN -> "例: 门冬胰岛素"
+                                                                MedCategory.ORAL -> "例: 二甲双胍"
+                                                                MedCategory.GLP1 -> "例: 司美格鲁肽"
+                                                            },
                                                             fontSize = 13.sp,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                                         )
@@ -1446,20 +1414,17 @@ fun AddItemDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(horizontal = 14.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = if (selectedMedCategory == MedCategory.INSULIN) "💉 常用胰岛素" else "💊 常用口服药",
+                                                text = when (selectedMedCategory) {
+                                                    MedCategory.INSULIN -> "💉 胰岛素"
+                                                    MedCategory.ORAL -> "💊 口服药"
+                                                    MedCategory.GLP1 -> "💉 GLP-1/针剂"
+                                                },
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = "高频置顶",
-                                                fontSize = 10.sp,
-                                                color = TealPrimary,
-                                                fontWeight = FontWeight.Medium
                                             )
                                         }
                                         HorizontalDivider(
@@ -1468,7 +1433,6 @@ fun AddItemDialog(
                                         )
                                         currentMedList.forEach { med ->
                                             val isCurrent = medNameInputText == med
-                                            val freq = medFrequencyMap[med] ?: 0
                                             DropdownMenuItem(
                                                 text = {
                                                     Row(
@@ -1476,31 +1440,12 @@ fun AddItemDialog(
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         horizontalArrangement = Arrangement.SpaceBetween
                                                     ) {
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = med,
-                                                                fontSize = 13.sp,
-                                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                                                color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurface
-                                                            )
-                                                            if (freq > 0) {
-                                                                Surface(
-                                                                    shape = RoundedCornerShape(4.dp),
-                                                                    color = TealPrimary.copy(alpha = 0.12f)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "常用 · ${freq}次",
-                                                                        fontSize = 9.5.sp,
-                                                                        fontWeight = FontWeight.SemiBold,
-                                                                        color = TealPrimary,
-                                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
+                                                        Text(
+                                                            text = med,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                                            color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurface
+                                                        )
                                                         if (isCurrent) {
                                                             Icon(
                                                                 imageVector = Icons.Default.Check,
@@ -1532,7 +1477,7 @@ fun AddItemDialog(
                                     border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.35f)),
                                     modifier = Modifier
                                         .height(50.dp)
-                                        .clickable { triggerCamera() }
+                                        .clickable { showImageSourcePicker = true }
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 12.dp),
@@ -1549,94 +1494,37 @@ fun AddItemDialog(
                                             text = "拍照识药",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = TealPrimary
+                                            color = TealPrimary,
+                                            maxLines = 1
                                         )
                                     }
                                 }
                             }
 
                             // OCR 识别状态或提示
-                            if (isRecognizing) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(TealPrimary.copy(alpha = 0.08f))
-                                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "🔍 正在拍照识别药盒文字...",
-                                        fontSize = 11.5.sp,
-                                        color = TealPrimary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            } else if (!recognitionMessage.isNullOrBlank()) {
-                                val isSuccess = recognitionMessage!!.startsWith("已识别")
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSuccess) TealPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = recognitionMessage!!,
-                                            fontSize = 11.5.sp,
-                                            color = if (isSuccess) TealPrimary else MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "关闭",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier
-                                                .size(14.dp)
-                                                .clickable { recognitionMessage = null }
-                                        )
-                                    }
-                                }
-                            }
+                            OcrStatusBanner(
+                                isRecognizing = isRecognizing,
+                                recognitionMessage = recognitionMessage,
+                                onDismissMessage = { recognitionMessage = null }
+                            )
 
-                            // 3. 常见/高频药物快速点选胶囊（根据用户使用频次降序置顶排列）
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                items(currentMedList.take(6)) { med ->
-                                    val isCurrent = medNameInputText == med
-                                    val freq = medFrequencyMap[med] ?: 0
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isCurrent) TealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                        border = if (isCurrent) BorderStroke(1.dp, TealPrimary) else null,
-                                        modifier = Modifier.clickable {
-                                            medNameInputText = med
-                                            selectedMedCategory = MedicationData.inferCategory(med)
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                        ) {
-                                            if (freq > 0) {
-                                                Text("⭐", fontSize = 8.5.sp)
-                                            }
-                                            Text(
-                                                text = med,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isCurrent) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
+                            // 3. 常见/置顶药物快捷点选胶囊（分类切换带淡入淡出滑动过渡）
+                            AnimatedContent(
+                                targetState = selectedMedCategory,
+                                transitionSpec = {
+                                    fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(150))
+                                },
+                                label = "quick_med_chips_anim"
+                            ) { targetCat ->
+                                val medList = MedicationData.getMedicationOptions(targetCat, allRecords, medFrequencyMap)
+                                QuickMedChips(
+                                    medList = medList,
+                                    selectedMedName = medNameInputText,
+                                    onMedSelected = { med ->
+                                        medNameInputText = med
+                                        selectedMedCategory = MedicationData.inferCategory(med)
                                     }
-                                }
+                                )
                             }
 
                             // 4. 剂量与时机（严格等高 50.dp 平齐，且睡前时段彻底隐藏无意义的餐前/餐中/餐后）
@@ -1649,7 +1537,7 @@ fun AddItemDialog(
                                     // 用药剂量输入框（高度 50.dp，圆角 12.dp）
                                     BasicTextField(
                                         value = medDoseInputText,
-                                        onValueChange = { medDoseInputText = it },
+                                        onValueChange = { medDoseInputText = it.replace('。', '.').replace('，', '.').replace(" ", "") },
                                         singleLine = true,
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                         textStyle = TextStyle(
@@ -1680,9 +1568,9 @@ fun AddItemDialog(
                                                 Box(modifier = Modifier.weight(1f)) {
                                                     if (medDoseInputText.isEmpty()) {
                                                         Text(
-                                                            text = "用药剂量",
-                                                            fontSize = 13.5.sp,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                             text = "用药剂量",
+                                                             fontSize = 13.5.sp,
+                                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                                         )
                                                     }
                                                     innerTextField()
@@ -1697,40 +1585,13 @@ fun AddItemDialog(
                                         }
                                     )
 
-                                    // 时机选择（餐前、餐中、餐后，高度严格 50.dp，与左侧剂量框上下完全齐平）
-                                    Row(
-                                        modifier = Modifier
-                                            .height(50.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                            .border(
-                                                width = 1.dp,
-                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .padding(3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        listOf("餐前", "餐中", "餐后").forEach { timing ->
-                                            val isSel = medTimingChoice == timing
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxHeight()
-                                                    .clip(RoundedCornerShape(9.dp))
-                                                    .background(if (isSel) TealPrimary else Color.Transparent)
-                                                    .clickable { medTimingChoice = timing }
-                                                    .padding(horizontal = 10.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = timing,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
+                                    // 时机选择（餐前、餐中、餐后，配备物理滑块丝滑动画，高度严格 50.dp，与左侧剂量框上下完全齐平）
+                                    MedicationTimingSelectorCapsule(
+                                        selectedTiming = medTimingChoice,
+                                        onTimingSelected = { medTimingChoice = it },
+                                        modifier = Modifier.width(175.dp),
+                                        height = 50.dp
+                                    )
                                 }
                             } else {
                                 // 睡前时段：无餐食，无须餐前/中/后时机，剂量框直接通栏铺满
@@ -1804,23 +1665,100 @@ fun AddItemDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // 5. 底部操作栏（极简单按钮）
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                // 5. 底部操作栏（Apple 48.dp Pill 确认按钮，全宽且搭载签名级物理弹簧微动效）
+                Button(
+                    onClick = { submit(keepOpen = false) },
+                    enabled = canSubmit,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TealPrimary,
+                        disabledContainerColor = TealPrimary.copy(alpha = 0.35f)
+                    ),
+                    shape = ApplePillShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .applePressEffect(0.95f)
+                        .testTag("add_item_submit_button")
                 ) {
-                    val submitButtonText = if (hasExistingData) "保存修改" else "保存条目"
-                    Button(
-                        onClick = { submit(keepOpen = false) },
-                        enabled = canSubmit,
-                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(submitButtonText, fontWeight = FontWeight.Bold)
-                    }
+                    Text(
+                        text = submitButtonText,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.32).sp,
+                        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
+                    )
                 }
             }
         }
     }
 }
+
+/**
+ * 跨时段草稿记忆状态容器，解决切换时段导致已输入数值被抹除的问题
+ */
+private class PeriodDraftState(
+    var preBgInputText: String = "",
+    var postBgInputText: String = "",
+    val postMealInputs: MutableMap<String, String> = mutableMapOf(),
+    val postMealTimes: MutableMap<String, String> = mutableMapOf(),
+    var dietInputText: String = "",
+    var exerciseNameInputText: String = "",
+    var exerciseDurationInputText: String = "",
+    var medNameInputText: String = "",
+    var medDoseInputText: String = "",
+    var medTimingChoice: String = "餐前",
+    var selectedMedCategory: MedCategory = MedCategory.INSULIN,
+    var postMealTagChoice: String = "餐后2h",
+    var postMealTimeInputText: String = "",
+    var currentItemTime: String = "",
+    var isTimeManuallyEdited: Boolean = false,
+    var currentPostMealIndex: Int? = null,
+    val extraDynamicPostMealTabs: MutableList<String> = mutableListOf(),
+    var initialPreBg: Float? = null,
+    var initialDiet: String = "",
+    var initialExercise: String = "",
+    var initialMedDose: Float? = null,
+    var initialMedName: String = "",
+    var initialMedTiming: String = "",
+    val initialPostMealMap: MutableMap<String, Float> = mutableMapOf(),
+    var isLoaded: Boolean = false
+) {
+    fun isModified(): Boolean {
+        val currentPreBgFloat = preBgInputText.trim().toFloatOrNull()
+        val preBgMod = if (initialPreBg != null) {
+            currentPreBgFloat != initialPreBg
+        } else {
+            currentPreBgFloat != null && currentPreBgFloat in 0.5f..35.0f
+        }
+        val dietMod = dietInputText.trim() != initialDiet.trim()
+        val currentMedDoseFloat = medDoseInputText.trim().toFloatOrNull()
+        val medMod = if (initialMedDose != null) {
+            currentMedDoseFloat != initialMedDose ||
+                    (currentMedDoseFloat != null && currentMedDoseFloat > 0f && (medNameInputText.trim() != initialMedName.trim() || medTimingChoice != initialMedTiming))
+        } else {
+            currentMedDoseFloat != null && currentMedDoseFloat > 0f
+        }
+        val formattedEx = when {
+            exerciseNameInputText.isNotBlank() && exerciseDurationInputText.isNotBlank() ->
+                "${exerciseNameInputText.trim()} ${exerciseDurationInputText.trim()}分钟"
+            exerciseNameInputText.isNotBlank() -> exerciseNameInputText.trim()
+            exerciseDurationInputText.isNotBlank() -> "${exerciseDurationInputText.trim()}分钟"
+            else -> ""
+        }
+        val exMod = formattedEx != initialExercise.trim()
+        val postMealMod = run {
+            val currentValidPostMeals = postMealInputs.filter { (_, v) ->
+                v.trim().isNotEmpty() && (v.trim().toFloatOrNull()?.let { it in 0.5f..35.0f } == true)
+            }
+            if (currentValidPostMeals.keys != initialPostMealMap.keys) {
+                true
+            } else {
+                currentValidPostMeals.any { (tag, vStr) ->
+                    vStr.trim().toFloatOrNull() != initialPostMealMap[tag]
+                }
+            }
+        }
+        return preBgMod || dietMod || medMod || exMod || postMealMod
+    }
+}
+

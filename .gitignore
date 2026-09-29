@@ -49,3 +49,5 @@ Thumbs.db
 
 # Antigravity / AI Studio internal artifacts
 .antigravity/
+.agents/
+

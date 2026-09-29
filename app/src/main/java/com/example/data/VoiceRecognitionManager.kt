@@ -83,6 +83,15 @@ object VoiceRecognitionManager {
         _requestShowOverlay.value = false
     }
 
+    private var currentUserMedProfile: UserMedProfile? = null
+
+    /**
+     * 设置用户个性化常用药画像（供语音识别模糊推断高频药使用）
+     */
+    fun setUserMedProfile(profile: UserMedProfile?) {
+        currentUserMedProfile = profile
+    }
+
     private var waveThread: Thread? = null
 
     @Volatile
@@ -125,7 +134,7 @@ object VoiceRecognitionManager {
             } catch (e: Throwable) {
                 isModelLoading = false
                 Log.e(TAG, "Sherpa-ONNX SenseVoice model load failed, will fallback to system recognizer", e)
-                _statusText.value = "语音识别就绪"
+                _statusText.value = "离线模型未就绪，已启用系统语音识别"
             }
         }.start()
     }
@@ -157,22 +166,35 @@ object VoiceRecognitionManager {
                     val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, channelConfig, audioFormat)
                     val bufferSizeInBytes = maxOf(minBufferSize, SAMPLE_RATE / 5) // ~200ms 缓存
 
-                    val record = AudioRecord(
-                        MediaRecorder.AudioSource.MIC,
-                        SAMPLE_RATE,
-                        channelConfig,
-                        audioFormat,
-                        bufferSizeInBytes * 2
-                    )
+                    val record = try {
+                        AudioRecord(
+                            MediaRecorder.AudioSource.MIC,
+                            SAMPLE_RATE,
+                            channelConfig,
+                            audioFormat,
+                            bufferSizeInBytes * 2
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "AudioRecord constructor failed, fallback to system recognizer", e)
+                        null
+                    }
 
-                    if (record.state != AudioRecord.STATE_INITIALIZED) {
+                    if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
                         Log.e(TAG, "AudioRecord initialization failed, fallback to system recognizer")
                         startFallbackSystemRecognizer(context, defaultDate, sessionId)
                         return@post
                     }
 
+                    try {
+                        record.startRecording()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "AudioRecord startRecording failed, mic might be busy", e)
+                        _statusText.value = "麦克风被占用或不可用"
+                        startFallbackSystemRecognizer(context, defaultDate, sessionId)
+                        return@post
+                    }
+
                     audioRecord = record
-                    record.startRecording()
 
                     recordingThread = Thread {
                         val shortBuffer = ShortArray(bufferSizeInBytes / 2)
@@ -180,6 +202,15 @@ object VoiceRecognitionManager {
 
                         while (_isListening.value && currentSessionId == sessionId) {
                             val read = record.read(shortBuffer, 0, shortBuffer.size)
+                            if (read < 0) {
+                                Log.w(TAG, "AudioRecord read error: $read")
+                                mainHandler.post {
+                                    if (_isListening.value && currentSessionId == sessionId) {
+                                        _statusText.value = "麦克风读取异常，请检查录音权限"
+                                    }
+                                }
+                                break
+                            }
                             if (read > 0) {
                                 var sumSquares = 0.0
                                 synchronized(collectedSamples) {
@@ -321,7 +352,7 @@ object VoiceRecognitionManager {
                     _spokenText.value = finalSpoken
 
                     if (finalSpoken.isNotEmpty()) {
-                        val parsed = VoiceRecognitionService.parseOffline(finalSpoken, defaultDate)
+                        val parsed = VoiceRecognitionService.parseOffline(finalSpoken, defaultDate, currentUserMedProfile)
                         _parsedRecord.value = parsed
                         val count = parsed.getRecognizedItems().size
                         _statusText.value = if (count > 0) {
@@ -378,11 +409,14 @@ object VoiceRecognitionManager {
      * 手动编辑或更新转写文本
      */
     fun setCustomText(text: String, defaultDate: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)) {
+        if (_isListening.value) {
+            stopListening()
+        }
         val trimmed = text.trim()
         val optimized = VoiceRecognitionService.enhanceOfflineTranscription(trimmed)
         _spokenText.value = optimized
         if (optimized.isNotEmpty()) {
-            val parsed = VoiceRecognitionService.parseOffline(optimized, defaultDate)
+            val parsed = VoiceRecognitionService.parseOffline(optimized, defaultDate, currentUserMedProfile)
             _parsedRecord.value = parsed
             val count = parsed.getRecognizedItems().size
             _statusText.value = if (count > 0) {
@@ -393,7 +427,7 @@ object VoiceRecognitionManager {
             requestShowOverlay()
         } else {
             _parsedRecord.value = ParsedVoiceRecord(rawText = "", date = defaultDate)
-            _statusText.value = "请按住说话或输入文本"
+            _statusText.value = "点击按钮说话或输入文本"
         }
     }
 
@@ -419,6 +453,22 @@ object VoiceRecognitionManager {
                 override fun onEndOfSpeech() {}
                 override fun onError(error: Int) {
                     Log.w(TAG, "Fallback recognizer error code: $error")
+                    val errorMsg = when (error) {
+                        SpeechRecognizer.ERROR_AUDIO -> "麦克风录音出错，请检查麦克风权限"
+                        SpeechRecognizer.ERROR_CLIENT -> "语音识别客户端错误"
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少录音权限，请在系统设置中开启"
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "无网络且离线引擎未就绪"
+                        SpeechRecognizer.ERROR_NO_MATCH -> "未检测到说话声，请靠近重试"
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "录音设备忙，请稍候再试"
+                        SpeechRecognizer.ERROR_SERVER -> "语音识别服务异常"
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "等待说话超时"
+                        else -> "录音识别异常 ($error)"
+                    }
+                    mainHandler.post {
+                        if (currentSessionId == sessionId && _isListening.value) {
+                            _statusText.value = errorMsg
+                        }
+                    }
                 }
                 override fun onResults(results: Bundle?) {
                     if (currentSessionId != sessionId) return

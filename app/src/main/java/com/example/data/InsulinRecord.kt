@@ -6,6 +6,21 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/**
+ * 每日血糖与胰岛素/用药全维度核心持久化实体 (InsulinRecord)：
+ *
+ * 架构契约与数据模型设计：
+ * 1. 主键约束：以标准日期字符串 [date]（YYYY-MM-DD）为唯一业务主键，保证每天记录的唯一性与幂等性；
+ * 2. 四大餐段四维矩阵划分：
+ *    - 晨间（早餐）：空腹/餐前血糖、餐后血糖列表、用药名、剂量、时机、饮食、运动；
+ *    - 午间（午餐）：餐前血糖、餐后血糖列表、用药名、剂量、时机、饮食、运动；
+ *    - 傍晚（晚餐）：餐前血糖、餐后血糖列表、用药名、剂量、时机、饮食、运动；
+ *    - 夜间（睡前）：餐前血糖、餐后血糖列表、用药名、剂量、时机、加餐、运动；
+ * 3. 餐后多点测量扩展机制：
+ *    - 主列（如 postBfBG）存储规范化的默认餐后血糖值；
+ *    - 辅列（如 postBfBGExtra）以紧凑 JSON 格式存储多时间段餐后数值（餐后半小时/1h/2h/3h/动态加餐）；
+ *    - 通过 [getPostMealList] 与 [setPostMealList] 提供强类型读写，对上层业务彻底屏蔽底层字符串细节。
+ */
 @Entity(tableName = "insulin_records")
 data class InsulinRecord(
     @PrimaryKey

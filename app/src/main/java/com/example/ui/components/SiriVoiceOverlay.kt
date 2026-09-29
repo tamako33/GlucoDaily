@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -69,6 +70,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicNone
@@ -99,9 +101,12 @@ import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -150,17 +155,21 @@ enum class SiriVoiceState {
 }
 
 /**
- * 竖向对齐的Siri长按/点击语音悬浮按钮
+ * 竖向对齐的Siri点击启停语音悬浮按钮（按下开始识别，再按停止识别）
  */
 @Composable
 fun SiriVoiceFabButton(
-    isHolding: Boolean,
-    onPressStart: () -> Unit,
-    onPressEnd: () -> Unit,
-    onClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    isListening: Boolean = false,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isHolding: Boolean = false,
+    onPressStart: (() -> Unit)? = null,
+    onPressEnd: (() -> Unit)? = null
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    val isActive = isListening || isHolding
 
     // 呼吸动画
     val infiniteTransition = rememberInfiniteTransition(label = "fab_pulse")
@@ -175,7 +184,7 @@ fun SiriVoiceFabButton(
     )
 
     val buttonScale by animateFloatAsState(
-        targetValue = if (isHolding) 1.18f else 1.0f,
+        targetValue = if (isActive) 1.15f else 1.0f,
         animationSpec = spring(stiffness = 500f, dampingRatio = 0.75f),
         label = "buttonScale"
     )
@@ -188,26 +197,15 @@ fun SiriVoiceFabButton(
                 scaleX = buttonScale
                 scaleY = buttonScale
             }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        onPressStart()
-                        tryAwaitRelease()
-                        onPressEnd()
-                    },
-                    onTap = {
-                        if (onClick != null) {
-                            onClick()
-                        } else {
-                            onPressStart()
-                        }
-                    }
-                )
+            .clip(CircleShape)
+            .clickable {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                onClick()
             }
             .testTag("fab_siri_voice")
     ) {
-        // 呼吸光晕外环（按住时放大扩散）
-        if (isHolding) {
+        // 呼吸光晕外环（识别中放大扩散）
+        if (isActive) {
             Box(
                 modifier = Modifier
                     .size(68.dp)
@@ -231,17 +229,17 @@ fun SiriVoiceFabButton(
         // 主按钮圆盘
         Surface(
             shape = CircleShape,
-            color = if (isHolding) {
+            color = if (isActive) {
                 if (isDark) Color(0xFF0F172A) else Color(0xFF0D9488)
             } else {
                 TealContainer
             },
-            shadowElevation = if (isHolding) 8.dp else 3.dp,
+            shadowElevation = if (isActive) 8.dp else 3.dp,
             modifier = Modifier
                 .size(56.dp)
                 .border(
-                    width = if (isHolding) 2.dp else 1.dp,
-                    brush = if (isHolding) {
+                    width = if (isActive) 2.dp else 1.dp,
+                    brush = if (isActive) {
                         Brush.sweepGradient(
                             listOf(
                                 Color(0xFF00F2FE),
@@ -261,9 +259,9 @@ fun SiriVoiceFabButton(
                 modifier = Modifier.fillMaxSize()
             ) {
                 Icon(
-                    imageVector = if (isHolding) Icons.Default.Mic else Icons.Default.MicNone,
-                    contentDescription = "语音智能录入",
-                    tint = if (isHolding) {
+                    imageVector = if (isActive) Icons.Default.Mic else Icons.Default.MicNone,
+                    contentDescription = if (isActive) "停止语音录入" else "开启语音录入",
+                    tint = if (isActive) {
                         if (isDark) Color(0xFF00F2FE) else Color.White
                     } else {
                         TealOnContainer
@@ -286,9 +284,10 @@ fun SiriVoiceFabButton(
 @Composable
 fun SiriVoiceBottomOverlay(
     isVisible: Boolean,
-    isHolding: Boolean,
     onSaveRecord: (ParsedVoiceRecord) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isHolding: Boolean = false,
+    isCareMode: Boolean = false
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -323,23 +322,7 @@ fun SiriVoiceBottomOverlay(
         )
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasAudioPermission = isGranted
-    }
-
-    // 录音计时器
-    LaunchedEffect(isListening, isVisible) {
-        if (isVisible && isListening) {
-            recordingSeconds = 0
-            while (isActive && isListening) {
-                delay(1000)
-                recordingSeconds++
-            }
-        }
-    }
-
+    var permissionLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
     var stopListeningJob by remember { mutableStateOf<Job?>(null) }
 
     fun safeStartListening() {
@@ -349,7 +332,7 @@ fun SiriVoiceBottomOverlay(
         if (hasAudioPermission) {
             VoiceRecognitionManager.startListening(context)
         } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            permissionLauncher?.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -357,10 +340,20 @@ fun SiriVoiceBottomOverlay(
         stopListeningJob?.cancel()
         stopListeningJob = coroutineScope.launch {
             voiceState = SiriVoiceState.PROCESSING
-            delay(500)
+            delay(300)
             VoiceRecognitionManager.stopListening()
         }
     }
+
+    val actualLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasAudioPermission = isGranted
+        if (isGranted && isVisible) {
+            safeStartListening()
+        }
+    }
+    permissionLauncher = actualLauncher
 
     // 弹窗关闭时停止录音并重置状态
     DisposableEffect(isVisible) {
@@ -380,14 +373,18 @@ fun SiriVoiceBottomOverlay(
         }
     }
 
-    // 浮层显示时检查权限（若无权限则请求，但不自动开启录音，严格遵循按住说话）
+    // 浮层显示时检查权限并立即开启识别（按下启动、再按停止）
     LaunchedEffect(isVisible) {
-        if (isVisible && !hasAudioPermission) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        if (isVisible) {
+            if (!hasAudioPermission) {
+                permissionLauncher?.launch(Manifest.permission.RECORD_AUDIO)
+            } else if (!isListening) {
+                safeStartListening()
+            }
         }
     }
 
-    // 监听主界面悬浮 FAB 长按说话松开事件：按住启动实时离线识别，松开后延迟停止识别并分析提取
+    // 兼容外部传入的按住状态
     LaunchedEffect(isHolding) {
         if (isVisible) {
             if (isHolding) {
@@ -452,10 +449,11 @@ fun SiriVoiceBottomOverlay(
             val imeBottom = WindowInsets.ime.getBottom(density)
             val isKeyboardOpen = imeBottom > 0
 
-            // 弥散风格底板容器（Siri式无底框浮层设计，输入法弹出时避让半个字距8dp）
+            // 弥散风格底板容器（Siri式无底框浮层设计，关怀模式适度增高浮层占位，使提示框居上、文字居中偏下）
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(if (isCareMode) Modifier.fillMaxHeight(0.72f) else Modifier)
                     .background(sheetGradient)
                     .imePadding()
                     .padding(bottom = if (isKeyboardOpen) 8.dp else 0.dp)
@@ -468,22 +466,89 @@ fun SiriVoiceBottomOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
-                        .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = if (isKeyboardOpen) 10.dp else 18.dp),
+                        .padding(start = 20.dp, end = 20.dp, top = if (isCareMode) 16.dp else 14.dp, bottom = if (isKeyboardOpen) 10.dp else 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // 极简半透明拖拽指示微条
-                    Box(
-                        modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(
-                                if (isDark) Color.White.copy(alpha = 0.22f)
-                                else Color(0xFFCBD5E1)
-                            )
-                    )
+                    if (isCareMode) {
+                        // 关怀模式顶部大标题与显眼关闭按键
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("🎙️", fontSize = 24.sp)
+                                Text(
+                                    text = "语音记一笔",
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = primaryTextColor
+                                )
+                            }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onDismiss() }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "关闭",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 关怀模式通俗易懂的语音例句提示（置顶靠上，提示框向上移）
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isDark) Color(0xFF1E293B).copy(alpha = 0.75f) else Color(0xFFF1F5F9),
+                            border = BorderStroke(1.2.dp, if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 2.dp, bottom = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("💡", fontSize = 18.sp)
+                                Text(
+                                    text = "口述示例：“早饭前6.2，打8个门冬，吃了包子，散步20分钟”",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = secondaryTextColor,
+                                    lineHeight = 22.sp
+                                )
+                            }
+                        }
+                    } else {
+                        // 极简半透明拖拽指示微条
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(
+                                    if (isDark) Color.White.copy(alpha = 0.22f)
+                                    else Color(0xFFCBD5E1)
+                                )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
 
                     // 状态栏提示（简洁优雅居中）
                     Row(
@@ -493,14 +558,14 @@ fun SiriVoiceBottomOverlay(
                     ) {
                         if (voiceState == SiriVoiceState.PROCESSING) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
+                                modifier = Modifier.size(if (isCareMode) 16.dp else 12.dp),
                                 strokeWidth = 2.dp,
                                 color = accentCyan
                             )
                         } else {
                             Box(
                                 modifier = Modifier
-                                    .size(8.dp)
+                                    .size(if (isCareMode) 10.dp else 8.dp)
                                     .clip(CircleShape)
                                     .background(
                                         when (voiceState) {
@@ -513,12 +578,14 @@ fun SiriVoiceBottomOverlay(
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(if (isCareMode) 8.dp else 6.dp))
 
                         val currentHint = if (isListening && recordingSeconds > 0) {
-                            "$statusHint (${String.format(Locale.getDefault(), "%02d:%02d", recordingSeconds / 60, recordingSeconds % 60)})"
+                            if (isCareMode) "正在倾听您说话 (${String.format(Locale.getDefault(), "%02d:%02d", recordingSeconds / 60, recordingSeconds % 60)}) · 说完点下方按钮"
+                            else "$statusHint (${String.format(Locale.getDefault(), "%02d:%02d", recordingSeconds / 60, recordingSeconds % 60)})"
                         } else {
-                            statusHint
+                            if (isCareMode && !isListening) "请点击下方大按钮开始说话"
+                            else statusHint
                         }
 
                         Text(
@@ -526,22 +593,33 @@ fun SiriVoiceBottomOverlay(
                             style = MaterialTheme.typography.labelMedium.copy(
                                 color = primaryTextColor,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = if (isCareMode) 16.sp else 13.sp
                             ),
                             maxLines = 1
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(if (isCareMode) 22.dp else 14.dp))
+
+                    val subtitleScrollState = rememberScrollState()
+                    LaunchedEffect(spokenText) {
+                        if (spokenText.isNotBlank()) {
+                            subtitleScrollState.animateScrollTo(
+                                subtitleScrollState.maxValue,
+                                animationSpec = spring(stiffness = 380f, dampingRatio = 0.85f)
+                            )
+                        }
+                    }
 
                     // ==========================================
-                    // 🌟 Siri 浮动式文字展示区（位于动效上方，去底框）
+                    // 🌟 Siri 浮动式文字展示区（向上自然滑动隐退，最新文字居于视野）
                     // ==========================================
+                    val subtitleViewportHeight = if (isCareMode) 120.dp else 74.dp
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .heightIn(min = 44.dp),
+                            .height(subtitleViewportHeight)
+                            .padding(horizontal = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         if (isManualEditing) {
@@ -564,7 +642,7 @@ fun SiriVoiceBottomOverlay(
                                     },
                                     textStyle = TextStyle(
                                         color = primaryTextColor,
-                                        fontSize = 16.sp,
+                                        fontSize = if (isCareMode) 22.sp else 16.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         textAlign = TextAlign.Start
                                     ),
@@ -578,80 +656,105 @@ fun SiriVoiceBottomOverlay(
                                     onClick = { isManualEditing = false },
                                     colors = ButtonDefaults.buttonColors(containerColor = accentCyan),
                                     shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(32.dp)
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(if (isCareMode) 40.dp else 32.dp)
                                 ) {
-                                    Text("完成", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("完成", fontSize = if (isCareMode) 15.sp else 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 }
                             }
                         } else if (spokenText.isNotBlank()) {
-                            // Siri浮动式口述文字（大字号、无边框、无底框卡片、优雅居中浮动）
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                            // 🌟 社交媒体式实时滚动字幕流：长段文字向上自然滑动并羽化渐隐，最新内容始终停驻在视野中央
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                    .drawWithContent {
+                                        drawContent()
+                                        // 顶部平滑羽化渐隐：之前说过的文字向上滑出时自然隐褪，绝不向下无限堆叠撑爆屏幕
+                                        drawRect(
+                                            brush = Brush.verticalGradient(
+                                                0f to Color.Black,
+                                                0.25f to Color.Transparent,
+                                                startY = 0f,
+                                                endY = size.height * 0.32f
+                                            ),
+                                            blendMode = BlendMode.DstOut
+                                        )
+                                    }
+                                    .verticalScroll(subtitleScrollState),
+                                contentAlignment = Alignment.BottomCenter
                             ) {
                                 Text(
                                     text = "“ $spokenText ”",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         color = primaryTextColor,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 18.sp,
-                                        lineHeight = 24.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = if (isCareMode) 26.sp else 18.sp,
+                                        lineHeight = if (isCareMode) 36.sp else 24.sp,
                                         textAlign = TextAlign.Center
                                     ),
                                     modifier = Modifier
-                                        .weight(1f, fill = false)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 36.dp, vertical = 4.dp)
                                         .testTag("siri_recognized_text")
                                         .clickable { isManualEditing = true }
                                 )
+                            }
 
-                                Spacer(modifier = Modifier.width(6.dp))
-
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            // 独立悬浮于右上角的操作按键（编辑与清空），不随文本向上滑动而位移
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 2.dp, end = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = { isManualEditing = true },
+                                    modifier = Modifier.size(if (isCareMode) 32.dp else 24.dp)
                                 ) {
-                                    IconButton(
-                                        onClick = { isManualEditing = true },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = "修改口述内容",
-                                            tint = accentCyan,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { VoiceRecognitionManager.setCustomText("") },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Clear,
-                                            contentDescription = "清空文本",
-                                            tint = secondaryTextColor.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "修改口述内容",
+                                        tint = accentCyan,
+                                        modifier = Modifier.size(if (isCareMode) 18.dp else 14.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { VoiceRecognitionManager.setCustomText("") },
+                                    modifier = Modifier.size(if (isCareMode) 32.dp else 24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "清空文本",
+                                        tint = secondaryTextColor.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(if (isCareMode) 18.dp else 14.dp)
+                                    )
                                 }
                             }
                         } else {
-                            // 未说话时的浮动占位引导文案（无框、轻透）
+                            // 未说话时的浮动占位引导文案（无框、轻透、居中偏下）
                             Text(
-                                text = if (isListening) "请说话，正在实时离线识别中..." else "按住下方按钮说话，松开后自动提取数值填入",
+                                text = if (isCareMode) {
+                                    if (isListening) "🎙️ 正在倾听您说话，口述将大字展示在此…"
+                                    else "👉 点击下方大按钮开始说话，支持一句话记全"
+                                } else {
+                                    if (isListening) "请说话，正在实时离线识别中..."
+                                    else "点击下方按钮开始说话，再次点击停止识别并提取"
+                                },
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     color = if (isListening) accentCyan else secondaryTextColor.copy(alpha = 0.85f),
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
+                                    fontSize = if (isCareMode) 18.sp else 14.sp,
+                                    lineHeight = if (isCareMode) 26.sp else 20.sp,
+                                    fontWeight = if (isCareMode) FontWeight.SemiBold else FontWeight.Normal,
                                     textAlign = TextAlign.Center
                                 ),
-                                modifier = Modifier.padding(vertical = 2.dp)
+                                modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     // ==========================================
                     // 🌟 炫彩声波动效（位于浮动文字正下方）
@@ -674,7 +777,7 @@ fun SiriVoiceBottomOverlay(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -683,19 +786,20 @@ fun SiriVoiceBottomOverlay(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.AutoAwesome,
                                         contentDescription = null,
                                         tint = accentCyan,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size(if (isCareMode) 20.dp else 15.dp)
                                     )
                                     Text(
-                                        text = "识别提取出 ${recognizedItems.size} 项内容，供核对填入：",
+                                        text = if (isCareMode) "✅ 识别提取出 ${recognizedItems.size} 项内容，请核对：" else "识别提取出 ${recognizedItems.size} 项内容，供核对填入：",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             color = accentCyan,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = if (isCareMode) 16.5.sp else 12.sp
                                         )
                                     )
                                 }
@@ -704,7 +808,7 @@ fun SiriVoiceBottomOverlay(
                                     text = "📅 ${parsedRecord.date}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = secondaryTextColor,
-                                        fontSize = 11.sp
+                                        fontSize = if (isCareMode) 14.sp else 11.sp
                                     )
                                 )
                             }
@@ -712,28 +816,31 @@ fun SiriVoiceBottomOverlay(
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 recognizedItems.forEach { item ->
                                     val badgeBg = if (isDark) Color(0xFF1E293B) else Color(0xFFF0FDF4)
                                     val badgeBorder = if (isDark) accentCyan.copy(alpha = 0.35f) else Color(0xFF86EFAC)
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = RoundedCornerShape(if (isCareMode) 12.dp else 8.dp),
                                         color = badgeBg,
-                                        border = BorderStroke(0.8.dp, badgeBorder),
+                                        border = BorderStroke(if (isCareMode) 1.2.dp else 0.8.dp, badgeBorder),
                                         shadowElevation = if (isDark) 0.dp else 1.dp
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                            modifier = Modifier.padding(
+                                                horizontal = if (isCareMode) 12.dp else 9.dp,
+                                                vertical = if (isCareMode) 8.dp else 5.dp
+                                            ),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Text(text = item.icon, fontSize = 13.sp)
+                                            Text(text = item.icon, fontSize = if (isCareMode) 18.sp else 13.sp)
                                             Text(
                                                 text = "${item.label}:",
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     color = if (isDark) secondaryTextColor else Color(0xFF166534),
-                                                    fontSize = 11.sp
+                                                    fontSize = if (isCareMode) 15.sp else 11.sp
                                                 )
                                             )
                                             Text(
@@ -741,7 +848,7 @@ fun SiriVoiceBottomOverlay(
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     color = if (isDark) accentCyan else Color(0xFF15803D),
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.sp
+                                                    fontSize = if (isCareMode) 17.sp else 12.sp
                                                 )
                                             )
                                         }
@@ -765,19 +872,21 @@ fun SiriVoiceBottomOverlay(
                                     containerColor = TealPrimary,
                                     contentColor = Color.White
                                 ),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(if (isCareMode) 16.dp else 10.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .height(if (isCareMode) 56.dp else 44.dp)
                                     .padding(top = 4.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(if (isCareMode) 22.dp else 16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "核对无误，填入记录 (${recognizedItems.size}项数值)",
+                                    text = if (isCareMode) "✓ 核对无误，保存记录 (${recognizedItems.size}项)" else "核对无误，填入记录 (${recognizedItems.size}项数值)",
+                                    fontSize = if (isCareMode) 18.sp else 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -785,14 +894,12 @@ fun SiriVoiceBottomOverlay(
                     }
 
                     // ==========================================
-                    // 🌟 核心操作区：按住说话，松开自动识别并提取
+                    // 🌟 核心操作区：按下开始识别，再按下停止识别（告别长按模式）
                     // ==========================================
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    val isActionActive = isListening || isCurrentlyHolding
-
                     val holdScale by animateFloatAsState(
-                        targetValue = if (isActionActive) 1.05f else 1.0f,
+                        targetValue = if (isListening) 1.04f else 1.0f,
                         animationSpec = spring(stiffness = 500f, dampingRatio = 0.75f),
                         label = "holdScale"
                     )
@@ -801,16 +908,25 @@ fun SiriVoiceBottomOverlay(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        val careBtnColor = if (isListening) {
+                            if (isDark) Color(0xFFDC2626) else Color(0xFFEF4444)
+                        } else {
+                            TealPrimary
+                        }
                         Surface(
-                            shape = RoundedCornerShape(28.dp),
-                            color = if (isActionActive) {
-                                if (isDark) Color(0xFF0F766E) else Color(0xFF0D9488)
-                            } else {
-                                if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                            shape = RoundedCornerShape(if (isCareMode) 20.dp else 28.dp),
+                            color = if (isCareMode) careBtnColor else {
+                                if (isListening) {
+                                    if (isDark) Color(0xFF0F766E) else Color(0xFF0D9488)
+                                } else {
+                                    if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                                }
                             },
                             border = BorderStroke(
-                                width = if (isActionActive) 2.dp else 1.dp,
-                                brush = if (isActionActive) {
+                                width = if (isListening) 2.dp else 1.dp,
+                                brush = if (isCareMode) {
+                                    SolidColor(Color.Transparent)
+                                } else if (isListening) {
                                     Brush.sweepGradient(
                                         listOf(
                                             Color(0xFF00F2FE),
@@ -823,43 +939,29 @@ fun SiriVoiceBottomOverlay(
                                     SolidColor(if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1))
                                 }
                             ),
-                            shadowElevation = if (isActionActive) 10.dp else 2.dp,
+                            shadowElevation = if (isListening || isCareMode) 8.dp else 2.dp,
                             modifier = Modifier
-                                .fillMaxWidth(0.92f)
-                                .height(56.dp)
+                                .fillMaxWidth(if (isCareMode) 0.95f else 0.92f)
+                                .height(if (isCareMode) 64.dp else 56.dp)
                                 .graphicsLayer {
                                     scaleX = holdScale
                                     scaleY = holdScale
                                 }
-                                .pointerInput(hasAudioPermission) {
-                                    detectTapGestures(
-                                        onTap = {
-                                            if (!hasAudioPermission) {
-                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                            }
-                                        },
-                                        onPress = {
-                                            if (!hasAudioPermission) {
-                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                                return@detectTapGestures
-                                            }
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            isLocalHolding = true
-                                            safeStartListening()
-                                            val released = tryAwaitRelease()
-                                            isLocalHolding = false
-                                            if (released) {
-                                                safeStopListeningWithDelay()
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            } else {
-                                                stopListeningJob?.cancel()
-                                                stopListeningJob = null
-                                                VoiceRecognitionManager.cancel()
-                                            }
-                                        }
-                                    )
+                                .clip(RoundedCornerShape(if (isCareMode) 20.dp else 28.dp))
+                                .clickable {
+                                    if (!hasAudioPermission) {
+                                        permissionLauncher?.launch(Manifest.permission.RECORD_AUDIO)
+                                        return@clickable
+                                    }
+                                    if (isListening) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        safeStopListeningWithDelay()
+                                    } else {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        safeStartListening()
+                                    }
                                 }
-                                .testTag("hold_to_speak_button")
+                                .testTag("toggle_voice_button")
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxSize(),
@@ -867,21 +969,25 @@ fun SiriVoiceBottomOverlay(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Mic,
+                                    imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                                     contentDescription = null,
-                                    tint = if (isActionActive) {
+                                    tint = if (isCareMode || isListening) {
                                         Color.White
                                     } else {
                                         if (isDark) Color(0xFF2DD4BF) else TealPrimary
                                     },
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(if (isCareMode) 30.dp else 24.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = if (isActionActive) "松开 完成识别" else "按住 说话",
-                                    fontSize = 17.sp,
+                                    text = if (isCareMode) {
+                                        if (isListening) "说完了，点击停止" else "点击开始说话"
+                                    } else {
+                                        if (isListening) "点击 停止识别" else "点击 开始说话"
+                                    },
+                                    fontSize = if (isCareMode) 20.sp else 17.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isActionActive) {
+                                    color = if (isCareMode || isListening) {
                                         Color.White
                                     } else {
                                         primaryTextColor
@@ -892,10 +998,16 @@ fun SiriVoiceBottomOverlay(
 
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = if (isActionActive) "阿里流式识别中 (松开后1s停止)..." else "阿里离线流式识别 · 松开后分析填入",
+                            text = if (isCareMode) {
+                                if (isListening) "🔴 录音中 · 说完轻触上方红色按钮即可停止并提取"
+                                else "💡 单次轻触即可说话 · 再次轻触即可停止"
+                            } else {
+                                if (isListening) "正在录音倾听中 · 再次点击停止识别并提取"
+                                else "点击开启语音识别 · 支持血糖、饮食、用药与运动"
+                            },
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 12.sp,
-                                color = if (isActionActive) accentCyan else secondaryTextColor
+                                fontSize = if (isCareMode) 14.5.sp else 12.sp,
+                                color = if (isListening) accentCyan else secondaryTextColor
                             )
                         )
                     }

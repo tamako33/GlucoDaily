@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
 
     // 初始化内置离线语音识别模型
     com.example.data.VoiceRecognitionManager.init(applicationContext)
+    // 初始化系统原生零体积离线语音合成
+    com.example.data.SystemTtsManager.init(applicationContext)
 
     // 检查冷启动时外部应用传入的 ZIP 备份文件
     incomingBackupUri.value = extractBackupUri(intent)
@@ -172,6 +174,11 @@ class MainActivity : ComponentActivity() {
     } catch (_: Exception) {
       // 容错降级
     }
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    com.example.data.SystemTtsManager.release()
   }
 }
 

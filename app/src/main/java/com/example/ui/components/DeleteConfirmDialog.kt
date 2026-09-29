@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,16 +53,16 @@ fun DeleteConfirmDialog(
                 .fillMaxWidth(0.86f)
                 .widthIn(max = 380.dp)
                 .testTag("delete_confirm_dialog"),
-            shape = RoundedCornerShape(24.dp),
+            shape = AppleCardShape,
             colors = CardDefaults.cardColors(
-                containerColor = if (isDark) Color(0xFF131D2A).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.96f)
+                containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
             ),
-            border = BorderStroke(
-                1.dp,
-                if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+            border = appleCardBorder(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
+            val isDark = isSystemInDarkTheme()
+            val destructiveRed = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -71,14 +72,14 @@ fun DeleteConfirmDialog(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .background(AppThemeColors.glucoseHighBg, CircleShape),
+                        .background(destructiveRed.copy(alpha = 0.12f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.DeleteForever,
                         contentDescription = null,
-                        tint = AppThemeColors.glucoseHigh,
-                        modifier = Modifier.size(30.dp)
+                        tint = destructiveRed,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
@@ -86,9 +87,9 @@ fun DeleteConfirmDialog(
 
                 Text(
                     text = "确认删除",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     fontSize = 17.sp,
+                    letterSpacing = (-0.38).sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
@@ -96,7 +97,8 @@ fun DeleteConfirmDialog(
 
                 Text(
                     text = "确定要删除 ${record.date} 的记录吗？此操作无法撤销。",
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 13.5.sp,
+                    letterSpacing = (-0.12).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
@@ -109,24 +111,38 @@ fun DeleteConfirmDialog(
                 ) {
                     OutlinedButton(
                         onClick = { dismissWithAnimation() },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .applePressEffect(0.95f),
+                        shape = ApplePillShape
                     ) {
-                        Text("取消")
+                        Text(
+                            "取消",
+                            fontSize = 15.sp,
+                            letterSpacing = (-0.2).sp
+                        )
                     }
 
                     Button(
                         onClick = onConfirm,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError
+                            containerColor = destructiveRed,
+                            contentColor = Color.White
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = ApplePillShape,
                         modifier = Modifier
                             .weight(1f)
+                            .height(44.dp)
+                            .applePressEffect(0.95f)
                             .testTag("confirm_delete_button")
                     ) {
-                        Text("确认删除")
+                        Text(
+                            "确认删除",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            letterSpacing = (-0.2).sp
+                        )
                     }
                 }
             }
