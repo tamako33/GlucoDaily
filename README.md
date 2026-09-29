@@ -1,20 +1,26 @@
+<div align="center">
+
+![GlycoFlow Logo](./docs/images/app_logo.png)
+
+# GlycoFlow · 糖安记
+
+**专为糖友与银发长辈量身打造的端侧离线智能控糖助手 · 双模无障碍 · 隐私安全**
+
+*(本项目全流程由 Google Gemini AI 辅助协同架构设计与工程实现)*
+
 <p align="center">
-  <img src="docs/images/app_logo.png" alt="GlycoFlow Logo" width="128" height="128" />
+  <a href="https://gemini.google.com/"><img src="https://img.shields.io/badge/AI--Assisted-Google_Gemini-8E75FF?style=flat&logo=googlegemini&logoColor=white" height="20" alt="Google Gemini" /></a>
+  <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.0.0-7F52FF?style=flat&logo=kotlin" height="20" alt="Kotlin" /></a>
+  <a href="https://developer.android.com/jetpack/compose"><img src="https://img.shields.io/badge/Jetpack_Compose-Material_3-4285F4?style=flat&logo=android" height="20" alt="Jetpack Compose" /></a>
+  <a href="https://developer.android.com/about/versions/14"><img src="https://img.shields.io/badge/Android-8.0_~_15-3DDC84?style=flat&logo=android" height="20" alt="Android Support" /></a>
+  <a href="https://github.com/alibaba-damo-academy/FunASR"><img src="https://img.shields.io/badge/Offline_AI-SenseVoice--Small-FF6F00?style=flat" height="20" alt="Offline AI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat" height="20" alt="License" /></a>
 </p>
 
-<h1 align="center">GlycoFlow · 糖安记</h1>
+</div>
 
-<p align="center">
-  <strong>专为糖友与银发长辈量身打造的端侧离线智能控糖助手 · 双模无障碍 · 隐私安全</strong>
-</p>
-
-<p align="center">
-  <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.0.0-7F52FF.svg?logo=kotlin" alt="Kotlin" /></a>
-  <a href="https://developer.android.com/jetpack/compose"><img src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4.svg?logo=android" alt="Jetpack Compose" /></a>
-  <a href="https://developer.android.com/about/versions/14"><img src="https://img.shields.io/badge/Android-8.0%20~%2015%20(API%2026--35)-3DDC84.svg?logo=android" alt="Android Support" /></a>
-  <a href="https://github.com/alibaba-damo-academy/FunASR"><img src="https://img.shields.io/badge/Offline%20AI-SenseVoice--Small-FF6F00.svg" alt="Offline AI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
-</p>
+> 📖 **官方使用手册已发布**：如需了解适老关怀模式操作细节、离线语音自然口述规范、临床图表解读与数据备份，请直接查阅：  
+> 👉 **[【点击直达】GlycoFlow 详细使用与操作说明书 (USER_GUIDE.md)](./USER_GUIDE.md)**
 
 ---
 
@@ -23,6 +29,20 @@
 **GlycoFlow（糖安记）** 是一款基于 **Kotlin + Jetpack Compose** 构建的现代化 Android 血糖与胰岛素随访管理应用。
 
 很多中老年及慢病患者在日常控糖中，常面临传统健康应用**“界面字号太小看不清”、“操作步骤繁琐”、“满屏弹窗广告”、“健康隐私上传云端泄露”**等痛点。**GlycoFlow** 从零重新思考慢病管理交互，首创**“标准专业模式 + 适老关怀模式”**无缝切换，并搭载 **100% 本地端侧离线语音大模型**，无需打字，说一句话即可自动分拣血糖、胰岛素、用药与运动，守护家人健康与隐私。
+
+---
+
+## 📚 详细使用说明书 (User Manual)
+
+为了让糖友、银发群体及照护家属能够无障碍轻松上手，本项目配备了详尽的图文使用手册：
+
+- 👵 **[关怀模式使用教程](./USER_GUIDE.md#二适老关怀模式使用指南)**：大字看板认知、微步加减微调、常用药历史点选、TTS 语音自动复述播报；
+- 🎙️ **[离线智能语音口诀](./USER_GUIDE.md#三端侧离线智能语音操作指南)**：无网络长句识别规范、社交媒体式上滑隐退动效、多项指标自动解构；
+- 📊 **[标准模式与图表解读](./USER_GUIDE.md#四标准专业模式使用指南)**：七大时段节律卡片、AGP 动态曲线、TIR 达标率与变异系数分析；
+- 💾 **[数据离线安全与备份](./USER_GUIDE.md#五数据安全与离线备份)**：本地 Room 数据库保护、导出迁移无缝换机；
+- ❓ **[常见问题排查与 FAQ](./USER_GUIDE.md#六常见问题答疑-faq)**。
+
+👉 **[立即查阅完整说明书 · USER_GUIDE.md](./USER_GUIDE.md)**
 
 ---
 
@@ -60,18 +80,18 @@
 
 ### 适老关怀模式 · 大字清晰、极简易用
 | 关怀主页 (大卡片直观排版) | 适老复合录入 (大字防截断) | 智能药箱 (品类/历史/时机) |
-|:---:|:---:|:---:|
-| <img src="docs/images/care_home.png" width="280" /> | <img src="docs/images/care_record_dialog.png" width="280" /> | <img src="docs/images/care_med_selector.png" width="280" /> |
+| :---: | :---: | :---: |
+| ![关怀主页](./docs/images/care_home.png) | ![适老复合录入](./docs/images/care_record_dialog.png) | ![智能药箱](./docs/images/care_med_selector.png) |
 
 ### 智能语音交互 · 连续大段识别与自动提取
 | 语音助理 (流式动效 & 向上滑动隐退) | 智能分拣多条实体 (自动归类) |
-|:---:|:---:|
-| <img src="docs/images/voice_assistant.png" width="300" /> | *支持连续语音说出时段、血糖、胰岛素、用药与运动，秒级提取并一键保存* |
+| :---: | :---: |
+| ![语音助理](./docs/images/voice_assistant.png) | *支持连续自然口述时段、血糖、胰岛素、用药与运动，本地毫秒级提取并一键保存* |
 
 ### 标准专业模式 · 丰富图表与数据全景
 | 标准仪表盘 (卡片流看板) | 动态血糖趋势 (AGP 曲线) | 统计分析 (TIR / 变异度) |
-|:---:|:---:|:---:|
-| <img src="docs/images/standard_board.png" width="280" /> | <img src="docs/images/trend_chart.png" width="280" /> | <img src="docs/images/stats_view.png" width="280" /> |
+| :---: | :---: | :---: |
+| ![标准仪表盘](./docs/images/standard_board.png) | ![动态血糖趋势](./docs/images/trend_chart.png) | ![统计分析](./docs/images/stats_view.png) |
 
 ---
 
@@ -96,6 +116,7 @@ graph TD
 - **架构范式**：MVVM + Unidirectional Data Flow (StateFlow / SharedFlow)
 - **本地数据库**：[Jetpack Room 2.6+](https://developer.android.com/training/data-storage/room) (SQLite)
 - **端侧语音大模型**：SenseVoice-Small ONNX Runtime / Sherpa-ONNX 离线推理
+- **AI 协同工程**：Google Gemini
 - **异步处理**：Kotlin Coroutines + Flow
 - **触感反馈与动效**：HapticFeedback + Jetpack Compose Animation
 
