@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Button
@@ -62,6 +64,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.BGUtils
+import com.example.data.DoctorReportShareHelper
 import com.example.data.InsulinRecord
 import com.example.data.MealPeriod
 import com.example.data.SystemTtsManager
@@ -122,6 +126,7 @@ enum class CareViewTab(val title: String, val icon: String) {
 @Composable
 fun CareHomeView(
     allRecords: List<InsulinRecord>,
+    tableRecords: List<InsulinRecord> = emptyList(),
     selectedDate: String,
     onDateChanged: (String) -> Unit,
     todayStr: String,
@@ -144,11 +149,25 @@ fun CareHomeView(
         val haptic = LocalHapticFeedback.current
         val isSpeaking by SystemTtsManager.isSpeaking.collectAsStateWithLifecycle()
 
-        var activeTab by remember { mutableStateOf(CareViewTab.DASHBOARD) }
+        var activeTab by rememberSaveable { mutableStateOf(CareViewTab.DASHBOARD) }
 
         // 获取当前选中日期的记录
         val currentRecord = remember(allRecords, selectedDate) {
             allRecords.find { it.date == selectedDate }
+        }
+
+        // 统一过滤表格记录（优先使用外部精准计算的 tableRecords，或按 cutoff 精准回退）
+        val displayTableRecords: List<InsulinRecord> = remember(tableRecords, allRecords, tableDateRange) {
+            if (tableRecords.isNotEmpty()) {
+                tableRecords
+            } else {
+                if (tableDateRange.days == null) {
+                    allRecords
+                } else {
+                    val cutoff = LocalDate.now().minusDays((tableDateRange.days - 1).toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    allRecords.filter { it.date >= cutoff }
+                }
+            }
         }
 
         val statusBarInsets = WindowInsets.statusBars.asPaddingValues()
@@ -297,69 +316,31 @@ fun CareHomeView(
                     }
 
                     CareViewTab.TABLE -> {
-                        // 表格模式：直接使用外部放大表格 UI，保持功能完全一致
+                        // 表格模式：全宽范围胶囊 + 放大表格展示
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(top = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // 表格日期范围快捷筛选：近7天、近14天、近30天、全部显示 + 放大横屏展示按钮
-                            Row(
+                            // 表格日期范围快捷筛选：近7天、近14天、近30天、全部显示（全宽自适应，大字舒适）
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(horizontal = 16.dp)
                             ) {
                                 DateRangeSelectorCapsule(
                                     selectedRange = tableDateRange,
                                     onRangeSelected = onTableDateRangeChanged,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = TealPrimary.copy(alpha = 0.12f),
-                                    border = BorderStroke(1.2.dp, TealPrimary),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            onOpenLandscapeTable()
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ZoomIn,
-                                            contentDescription = "放大横屏展示表格",
-                                            tint = TealPrimary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Text(
-                                            text = "放大横屏",
-                                            fontSize = careSp(13f),
-                                            fontWeight = FontWeight.Bold,
-                                            color = TealPrimary
-                                        )
-                                    }
-                                }
                             }
 
-                            val tableRecords: List<InsulinRecord> = remember(allRecords, tableDateRange) {
-                                if (tableDateRange.days != null) allRecords.takeLast(tableDateRange.days) else allRecords
-                            }
-
-                            if (tableRecords.isEmpty()) {
+                            if (displayTableRecords.isEmpty()) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .weight(1f)
                                         .padding(vertical = 40.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -370,46 +351,25 @@ fun CareHomeView(
                                     )
                                 }
                             } else {
-                                Box(modifier = Modifier.fillMaxSize()) {
-                                    RecordTable(
-                                        records = tableRecords,
-                                        allRecords = allRecords,
-                                        todayStr = todayStr,
-                                        onEdit = onEditRecord,
-                                        onDelete = onDeleteRecord,
-                                        isEnlarged = true,
-                                        zoomScale = careFontSize.scaleFactor,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-
-                                    // 右下角放大横屏浮动大按钮（与标准模式横屏逻辑保持一致）
-                                    FloatingActionButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            onOpenLandscapeTable()
-                                        },
-                                        containerColor = TealPrimary,
-                                        contentColor = Color.White,
-                                        shape = CircleShape,
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .padding(bottom = 20.dp, end = 20.dp)
-                                            .size(56.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ZoomIn,
-                                            contentDescription = "放大横屏展示表格",
-                                            modifier = Modifier.size(28.dp)
-                                        )
-                                    }
-                                }
+                                RecordTable(
+                                    records = displayTableRecords,
+                                    allRecords = allRecords,
+                                    todayStr = todayStr,
+                                    onEdit = onEditRecord,
+                                    onDelete = onDeleteRecord,
+                                    isEnlarged = true,
+                                    zoomScale = careFontSize.scaleFactor,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // 4. 底部大号常驻双按键（语音与大字录入，仅在看板模式展示；表格模式顶天立地浏览）
+            // 4. 底部大号常驻双按键（看板模式：语音与大字录入；表格模式：放大横屏与发给医生分享表格）
             if (activeTab == CareViewTab.DASHBOARD) {
                 CareBottomActionButtons(
                     onOpenVoiceRecord = {
@@ -420,6 +380,21 @@ fun CareHomeView(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         val period = InsulinRecord.getPeriodForTime()
                         onOpenCareRecordDialog(period, CareRecordType.FASTING_OR_PRE)
+                    }
+                )
+            } else if (activeTab == CareViewTab.TABLE) {
+                CareTableBottomBar(
+                    onOpenLandscape = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onOpenLandscapeTable()
+                    },
+                    onShareDoctor = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        DoctorReportShareHelper.shareDoctorReport(
+                            context = context,
+                            records = displayTableRecords,
+                            rangeDescription = tableDateRange.label
+                        )
                     }
                 )
             }
@@ -1489,6 +1464,89 @@ private fun CareBottomActionButtons(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "记一笔",
+                    fontSize = careSp(18f),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 关怀模式表格底部双操作栏（左侧：放大横屏大按钮；右侧：发给医生大按钮）
+ */
+@Composable
+private fun CareTableBottomBar(
+    onOpenLandscape: () -> Unit,
+    onShareDoctor: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .navigationBarsPadding(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 放大横屏展示按钮（轻量翡翠绿背景 + 线框）
+            OutlinedButton(
+                onClick = onOpenLandscape,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.8.dp, TealPrimary),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = TealPrimary.copy(alpha = 0.08f),
+                    contentColor = TealPrimary
+                ),
+                contentPadding = PaddingValues(vertical = 12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(58.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ZoomIn,
+                    contentDescription = "放大横屏",
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "放大横屏",
+                    fontSize = careSp(18f),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+
+            // 发给医生分享按钮（翡翠绿高对比实体按键）
+            Button(
+                onClick = onShareDoctor,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TealPrimary,
+                    contentColor = Color.White
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
+                contentPadding = PaddingValues(vertical = 12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(58.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "发给医生",
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "发给医生",
                     fontSize = careSp(18f),
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,

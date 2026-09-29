@@ -1,8 +1,8 @@
 <div align="center">
 
-![GlycoFlow Logo](./docs/images/app_logo.png)
+![GlucoDaily Logo](./docs/images/app_logo.png)
 
-# GlycoFlow · 糖安记
+# GlucoDaily · 每日胰岛血糖 (糖安记)
 
 **专为糖友与银发长辈量身打造的端侧离线智能控糖助手 · 双模无障碍 · 隐私安全**
 
@@ -27,9 +27,9 @@
 
 ## 📖 项目简介 (Overview)
 
-**GlycoFlow（糖安记）** 是一款基于 **Kotlin + Jetpack Compose** 构建的现代化 Android 血糖与胰岛素随访管理应用。
+**GlucoDaily（每日胰岛血糖 · 糖安记）** 是一款基于 **Kotlin + Jetpack Compose** 构建的现代化 Android 血糖与胰岛素随访管理应用。
 
-很多中老年及慢病患者在日常控糖中，常面临传统健康应用**“界面字号太小看不清”、“操作步骤繁琐”、“满屏弹窗广告”、“健康隐私上传云端泄露”**等痛点。**GlycoFlow** 从零重新思考慢病管理交互，首创**“标准专业模式 + 适老关怀模式”**无缝切换，并搭载 **100% 本地端侧离线语音大模型**，无需打字，说一句话即可自动分拣血糖、胰岛素、用药与运动，守护家人健康与隐私。
+很多中老年及慢病患者在日常控糖中，常面临传统健康应用**“界面字号太小看不清”、“操作步骤繁琐”、“满屏弹窗广告”、“健康隐私上传云端泄露”**等痛点。**GlucoDaily** 从零重新思考慢病管理交互，首创**“标准专业模式 + 适老关怀模式”**无缝切换，并搭载 **100% 本地端侧离线语音大模型**，无需打字，说一句话即可自动分拣血糖、胰岛素、用药与运动，守护家人健康与隐私。
 
 ---
 
@@ -85,7 +85,7 @@
 <a id="user-guide"></a>
 ## 📚 详细使用与操作说明书 (User Manual)
 
-> 本章节为 GlycoFlow 的官方使用指南，涵盖从零安装、适老关怀模式日常使用、离线语音自然口述规范，到专业图表解读与数据备份全流程。
+> 本章节为 GlucoDaily 的官方使用指南，涵盖从零安装、适老关怀模式日常使用、离线语音自然口述规范，到专业图表解读与数据备份全流程。
 
 ### 目录索引 (轻点快速定位)
 - [1. 快速入门与权限声明](#user-guide-start)
@@ -269,8 +269,8 @@ app/src/main/java/com/example/
 
 1. **克隆代码仓库**
    ```bash
-   git clone https://github.com/<your-username>/GlycoFlow.git
-   cd GlycoFlow
+   git clone https://github.com/<your-username>/GlucoDaily.git
+   cd GlucoDaily
    ```
 
 2. **本地编译 Debug APK**

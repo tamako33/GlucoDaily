@@ -279,6 +279,7 @@ fun InsulinTrackerScreen(
             if (careModeActive) {
                 CareHomeView(
                     allRecords = allRecords,
+                    tableRecords = tableRecords,
                     selectedDate = currentSelectedDate,
                     onDateChanged = { currentSelectedDate = it },
                     todayStr = todayStr,

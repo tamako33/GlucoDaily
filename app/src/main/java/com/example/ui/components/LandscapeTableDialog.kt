@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +56,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.DoctorReportShareHelper
 import com.example.data.InsulinRecord
 import com.example.ui.TableDateRange
 import com.example.ui.theme.TealPrimary
@@ -331,6 +333,41 @@ fun LandscapeTableView(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                                     )
+                                }
+
+                                // 发给医生分享按钮
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = TealPrimary.copy(alpha = 0.15f),
+                                    border = BorderStroke(1.dp, TealPrimary),
+                                    modifier = Modifier
+                                        .clickable {
+                                            DoctorReportShareHelper.shareDoctorReport(
+                                                context = context,
+                                                records = records,
+                                                rangeDescription = selectedRange.label
+                                            )
+                                        }
+                                        .testTag("btn_landscape_share_doctor")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Share,
+                                            contentDescription = "发给医生",
+                                            tint = TealPrimary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "发给医生",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TealPrimary
+                                        )
+                                    }
                                 }
                             }
                         }
