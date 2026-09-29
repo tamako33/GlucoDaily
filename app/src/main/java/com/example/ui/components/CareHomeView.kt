@@ -547,50 +547,15 @@ private fun CareTopBar(
                     }
                 }
 
-                // 关怀模式图标开关（替代原单字“退出”按钮，彻底消除退出程序的歧义）
-                Surface(
-                    shape = RoundedCornerShape(13.dp),
-                    color = TealPrimary.copy(alpha = 0.12f),
-                    border = BorderStroke(1.5.dp, TealPrimary),
-                    modifier = Modifier
-                        .height(38.dp)
-                        .clip(RoundedCornerShape(13.dp))
-                        .clickable(onClick = onExitCareMode)
-                        .padding(horizontal = 8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "关怀模式开关（当前开启，点击切回标准版）",
-                            tint = TealPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "关怀",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TealPrimary
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = TealPrimary
-                        ) {
-                            Text(
-                                text = "开",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                }
+                // 关怀模式图标开关（带物理滑块动效与长者图标）
+                CareModeToggleSwitch(
+                    isCareMode = true,
+                    onToggle = onExitCareMode
+                )
             }
         }
     }
+
 
     if (showFontSizeDialog) {
         CareFontSizeDialog(

@@ -118,6 +118,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.layout.widthIn
 import com.example.ui.components.FrostedGlassDialogOverlay
+import com.example.ui.components.CareModeToggleSwitch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -435,33 +436,12 @@ fun InsulinTrackerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             // 关怀模式开关（适老版大字模式，位于日夜切换左侧）
-                            Surface(
-                                shape = ApplePillShape,
-                                color = if (isCareMode) TealPrimary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier
-                                    .clip(ApplePillShape)
-                                    .clickable { viewModel.toggleCareMode() }
-                                    .testTag("care_mode_toggle_button")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Elderly,
-                                        contentDescription = "切换关怀模式",
-                                        tint = if (isCareMode) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Text(
-                                        text = "关怀版",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isCareMode) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                            CareModeToggleSwitch(
+                                isCareMode = isCareMode,
+                                onToggle = { viewModel.toggleCareMode() },
+                                modifier = Modifier.testTag("care_mode_toggle_button")
+                            )
+
 
                             // 1. Manual Theme Switcher Button
                             val (themeIcon, themeDesc) = when (themeMode) {

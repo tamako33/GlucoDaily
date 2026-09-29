@@ -23,17 +23,22 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Elderly
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -665,3 +670,76 @@ fun ImageSourcePickerDialog(
     }
 }
 
+/**
+ * 关怀模式物理状态滑动开关（统一双模交互，带长者图标与平滑滑块）
+ */
+@Composable
+fun CareModeToggleSwitch(
+    isCareMode: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val thumbOffset by animateDpAsState(
+        targetValue = if (isCareMode) 14.dp else 2.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium),
+        label = "thumbOffset"
+    )
+    val trackColor by animateColorAsState(
+        targetValue = if (isCareMode) TealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+        label = "trackColor"
+    )
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (isCareMode) TealPrimary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(
+            width = 1.2.dp,
+            color = if (isCareMode) TealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        ),
+        modifier = modifier
+            .height(35.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onToggle()
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Elderly,
+                contentDescription = if (isCareMode) "关怀模式开（点击切回标准版）" else "关怀模式关（点击开启）",
+                tint = if (isCareMode) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp)
+            )
+            Text(
+                text = "关怀版",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isCareMode) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            // 真实物理滑动开关轨道
+            Box(
+                modifier = Modifier
+                    .width(30.dp)
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(trackColor),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = thumbOffset)
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .shadow(1.dp, CircleShape)
+                )
+            }
+        }
+    }
+}
