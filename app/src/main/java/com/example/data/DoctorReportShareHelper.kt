@@ -35,7 +35,7 @@ object DoctorReportShareHelper {
      */
     fun buildDoctorTextReport(records: List<InsulinRecord>, rangeDescription: String = ""): String {
         if (records.isEmpty()) {
-            return "【每日胰岛血糖 · 随访报表】\n当前周期暂无测量记录。"
+            return "【糖舒心 · 随访报表】\n当前周期暂无测量记录。"
         }
 
         val sortedRecords = records.sortedByDescending { it.date }
@@ -77,7 +77,7 @@ object DoctorReportShareHelper {
         val tirPercent = if (allBgs.isNotEmpty()) ((inRangeCount * 100f) / allBgs.size).toInt() else 0
 
         val sb = StringBuilder()
-        sb.append("📋【每日胰岛血糖 · 随访数据报表】\n")
+        sb.append("📋【糖舒心 · 随访数据报表】\n")
         sb.append("📅 随访周期：$earliest 至 $latest")
         if (rangeDescription.isNotBlank()) sb.append("（$rangeDescription，共 ${records.size} 天）")
         sb.append("\n\n")
@@ -216,7 +216,7 @@ object DoctorReportShareHelper {
 
         try {
             val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            val fileName = "血糖随访数据表_${today}.csv"
+            val fileName = "糖舒心_血糖随访数据表_${today}.csv"
             val csvFile = createDoctorCsvFile(context, records, fileName)
             val textReport = buildDoctorTextReport(records, rangeDescription)
 
@@ -230,7 +230,7 @@ object DoctorReportShareHelper {
                 type = "text/comma-separated-values"
                 putExtra(Intent.EXTRA_STREAM, fileUri)
                 putExtra(Intent.EXTRA_TEXT, textReport)
-                putExtra(Intent.EXTRA_SUBJECT, "患者血糖与胰岛素随访数据表 ($rangeDescription)")
+                putExtra(Intent.EXTRA_SUBJECT, "糖舒心 · 患者血糖与胰岛素随访数据表 ($rangeDescription)")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">每日胰岛血糖</string>
+    <string name="app_name">糖舒心</string>
 
     <!-- Compose Material 3 DatePicker Chinese strings -->
     <string name="m3c_date_picker_title">选择日期</string>

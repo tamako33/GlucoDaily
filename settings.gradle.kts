@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "每日胰岛血糖"
+rootProject.name = "糖舒心"
 
 include(":app")

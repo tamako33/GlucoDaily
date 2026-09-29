@@ -419,7 +419,7 @@ fun InsulinTrackerScreen(
                             )
 
                             Text(
-                                text = "每日胰岛血糖",
+                                text = "糖舒心",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 letterSpacing = (-0.38).sp,
