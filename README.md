@@ -364,20 +364,9 @@ app/src/main/assets/sense-voice/
 
 ---
 
-## 📄 开源许可与商业授权 (License & Commercial Licensing)
+## 📄 开源协议 (License)
 
-本项目遵循 **[GNU General Public License v3.0 (GPLv3)](LICENSE)** 强互惠开源协议发布。
-
-### 1. 个人与开源社区使用（100% 免费与自由）
-- 允许**完全免费使用、修改、学习和分发**本项目源码及衍生版本；
-- **强互惠开源保障 (Copyleft)**：若您基于本项目开发并公开发布任何修改版本或衍生作品，根据 GPLv3 规定，**您的衍生作品也必须同样遵循 GPLv3 协议完整开放全部源代码**，绝不允许将修改后的代码据为己有或直接闭源分发。
-
-### 2. 商业改版与专有闭源授权 (Commercial License)
-- 若商业公司、医疗机构或企业希望将本项目代码、算法逻辑或核心交互组件集成至**专有闭源商业产品**中，或不想受限于 GPLv3 的强制开源要求：
-- **必须事先联系项目作者购买双重许可商业授权 (Dual Commercial Licensing)**。未经作者书面授权，严禁任何形式的闭源商业化定制、二次打包转售或去除作者版权声明的分发行为。
-
-### 3. 移动端与第三方推理库链接例外 (Linking Exception)
-- 依据 GPLv3 第 7 条，本项目特别授予**平台库链接例外权限**：允许本项目代码与 Android SDK、Google Play Services、Google ML Kit、Sherpa-ONNX 原生动态库链接打包并分发 APK 二进制文件，不受 GPLv3 强传染性限制，确保在各大移动终端与应用分发环境中的完全合规运行。除上述指定库之外的代码，必须严格遵守 GPLv3 协议。
+本项目采用 [GNU General Public License v3.0 (GPLv3)](LICENSE) 开源协议。
 
 ---
 
