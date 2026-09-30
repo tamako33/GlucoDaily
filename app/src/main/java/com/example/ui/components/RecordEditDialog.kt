@@ -155,6 +155,12 @@ fun RecordEditDialog(
     var activeFocusedCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var isScrollingAnimationRunning by remember { mutableStateOf(false) }
 
+    /**
+     * 智能软键盘动态避让算法 (Smart Keyboard Avoidance)：
+     * 1. 局部坐标系逆变换：利用 [container.localPositionOf] 获取聚焦组件相对于可滚动容器的未裁剪实际坐标，避免直接使用全局坐标导致的跨层级位移误差；
+     * 2. 黄金间隙标准：设定底部操作栏上方 8dp（半个字距）的安全透气余量，既杜绝软键盘遮挡当前输入框，又不过度推远视线；
+     * 3. 动态双向补偿：若输入框探出底部可视区则平滑正向滚入 ([scrollState.animateScrollBy(overlapBottom)])；若因快速切换上移被顶部顶出则负向滚回。
+     */
     fun adjustScrollForField(targetCoordinates: LayoutCoordinates?) {
         val container = scrollContainerCoordinates ?: return
         val field = targetCoordinates ?: return
@@ -480,6 +486,13 @@ fun RecordEditDialog(
     var currentPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var showImageSourcePicker by remember { mutableStateOf(false) }
 
+    /**
+     * 药盒/处方图像离线光学字符识别 (MLKit Offline OCR Pipeline)：
+     * 1. 异步多线程执行：通过 [Dispatchers.IO] 后台调度避免阻塞 UI 线程；
+     * 2. 中文模型解析：基于 Google MLKit [ChineseTextRecognizerOptions] 离线识别药盒外包装印刷体中文字符；
+     * 3. 临床规则引擎匹对：提取的原始文本传入 [MedicationData.matchMedicationFromOcr]，
+     *    自动匹配药品标准名、所属分类（胰岛素/口服药/针剂）、推荐剂量与用药时机，并即时回填至输入状态。
+     */
     fun processImageForMedication(uri: Uri) {
         isRecognizing = true
         coroutineScope.launch(Dispatchers.IO) {

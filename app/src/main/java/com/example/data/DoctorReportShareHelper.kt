@@ -15,10 +15,20 @@ import java.util.Locale
 /**
  * 医生端随访数据表格与临床报告分享助手 (DoctorReportShareHelper)
  *
- * 核心功能：
- * 1. 一键生成医生友好的格式化纯文本随访报告（支持在微信、短信、邮件中直接展示核心指标与达标率 TIR）；
- * 2. 一键生成标准 UTF-8 BOM 编码的 CSV/Excel 临床数据表格文件；
- * 3. 调起系统原生分享器 (Intent.ACTION_SEND)，患者一键直发给主管医生、营养师或家属。
+ * 架构设计与临床交互规范：
+ * 1. 双载荷并发分享策略 (Dual-Payload Sharing Architecture)：
+ *    - 文本报告 (EXTRA_TEXT)：在微信、短信、邮件会话气泡中直接以排版整洁的纯文本展现关键随访指标与近期每日明细，医生无需下载文件即可一眼秒懂；
+ *    - 表格附件 (EXTRA_STREAM)：生成标准 CSV 文件作为附件附带，供医生/营养师导入院内电子病历 (EMR) 或科研分析系统；
+ * 2. 国际临床标准达标率 (Time in Range - TIR) 引擎：
+ *    - 严格遵循 ADA（美国糖尿病协会）与 CDS（中华医学会糖尿病学分会）指南；
+ *    - 目标控制区间锁定为 3.9 ~ 10.0 mmol/L，晨起空腹基线 4.4 ~ 7.0 mmol/L；
+ *    - 智能统计低血糖预警次数 (<3.9 mmol/L)，一旦发生即在报表显著标明红标警示；
+ * 3. 跨平台 Excel 零乱码保障 (RFC 4180 + UTF-8 BOM)：
+ *    - 文件头部写入 `\uFEFF` (Byte Order Mark)，强制 Windows/macOS 版本的 Microsoft Excel 自动识别为 UTF-8 编码，彻底根除中文字符乱码痛点；
+ *    - 字段级 [escapeCsv] 转义，对多餐后点位分隔符、逗号、双引号实施 RFC 4180 规范转义；
+ * 4. Android FileProvider 沙箱安全通道：
+ *    - 文件临时存储于应用私有缓存目录 [context.cacheDir]；
+ *    - 通过 [FileProvider.getUriForFile] 派发受控 Content URI，配置 [FLAG_GRANT_READ_URI_PERMISSION]，确保分享至微信、QQ、企微等外部应用合规安全。
  */
 object DoctorReportShareHelper {
 

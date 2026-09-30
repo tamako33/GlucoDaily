@@ -210,9 +210,9 @@ fun CareHomeView(
             ) {
                 when (activeTab) {
                     CareViewTab.DASHBOARD -> {
-                        // 看板模式：日期翻页 + 红绿灯看板 + 四餐生活化药盒卡
+                        // 看板模式：顶部日期翻页 + 今日最新状态红绿灯看板 + 四餐生活化药盒卡片流
                         Column(modifier = Modifier.fillMaxSize()) {
-                            // 限制无法向未来天数翻页
+                            // 交互逻辑：防呆限制无法向未发生的未来日期翻页（cur < today 才能继续下一天）
                             val canGoNextDay = remember(selectedDate, todayStr) {
                                 runCatching {
                                     val cur = LocalDate.parse(selectedDate, DateTimeFormatter.ISO_LOCAL_DATE)
@@ -221,10 +221,12 @@ fun CareHomeView(
                                 }.getOrDefault(false)
                             }
 
+                            // 关怀模式适老化大号日期导航器（带触控震动反馈与未来防呆置灰）
                             CareDateNavigator(
                                 currentDate = selectedDate,
                                 canGoNext = canGoNextDay,
                                 onPrevDay = {
+                                    // 震动触控反馈：增强中老年用户点击确认感
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     val prev = runCatching {
                                         val d = LocalDate.parse(selectedDate, DateTimeFormatter.ISO_LOCAL_DATE)
@@ -370,13 +372,18 @@ fun CareHomeView(
             }
 
             // 4. 底部大号常驻双按键（看板模式：语音与大字录入；表格模式：放大横屏与发给医生分享表格）
+            // 4. 底部大号常驻操作区 (Bottom Action Bar)
+            // 看板模式下：展示「语音记一笔」与「记一笔」大按键
+            // 表格模式下：展示「放大横屏」与「发给医生」临床报表一键导出分享按键
             if (activeTab == CareViewTab.DASHBOARD) {
                 CareBottomActionButtons(
                     onOpenVoiceRecord = {
+                        // 交互：轻震动并启动端侧 SenseVoice 离线语音监听，长辈自然口述即可识别
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onOpenVoiceRecord()
                     },
                     onOpenManualRecord = {
+                        // 交互：依据当前现实时钟智能推断预设餐段（如上午预设早餐），减少长辈手动选择步骤
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         val period = InsulinRecord.getPeriodForTime()
                         onOpenCareRecordDialog(period, CareRecordType.FASTING_OR_PRE)
@@ -385,10 +392,13 @@ fun CareHomeView(
             } else if (activeTab == CareViewTab.TABLE) {
                 CareTableBottomBar(
                     onOpenLandscape = {
+                        // 交互：全屏横向展开大字表格，适合门诊就医时将手机横递给医生审阅
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onOpenLandscapeTable()
                     },
                     onShareDoctor = {
+                        // 交互：一键生成标准临床 CSV 文件（带 UTF-8 BOM 防乱码）与纯文本 TIR 随访报告，
+                        // 调起 Android 原生分享面板，患者可一键直发至主管医生的微信、QQ 或打印机
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         DoctorReportShareHelper.shareDoctorReport(
                             context = context,

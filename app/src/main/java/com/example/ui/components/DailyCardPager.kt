@@ -89,8 +89,13 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.absoluteValue
 
 /**
- * 视图模式无缝滑动分段选择器（卡片 vs 统计 vs 表格）
- * 严格遵循 Apple 设计标准：全胶囊轨槽、平滑 spring 物理滑块与 applePressEffect
+ * 视图模式无缝滑动分段选择器 (ViewModeSegmentedControl)
+ *
+ * 交互动效与设计语言：
+ * 1. 物理弹簧动效 (Spring Physics)：指示器滑块采用阻尼系数 0.85f、刚度 Medium 的弹性曲线，在 [CARDS, STATS, TABLE] 三模式间移动时具备真实的质量与回弹阻尼感；
+ * 2. 颜色插值过渡：当前选中项的文字与图标颜色通过 [animateColorAsState] 产生 200ms 柔和交叉淡变，杜绝硬切闪烁；
+ * 3. 苹果签名按压微动效：搭载 [applePressEffect(0.96f)]，在指尖按压瞬间给予细微的等比缩放响应，极大提升触感品质；
+ * 4. 严苛对齐与轨槽设计：利用 BoxWithConstraints 计算子项平均宽度，指示器位移与轨槽圆角完全契合 [AppleSegmentTrackShape] 和 [AppleSegmentThumbShape]。
  */
 @Composable
 fun ViewModeSegmentedControl(
@@ -302,9 +307,18 @@ fun EmptyRecordsView(onAdd: () -> Unit) {
 
 /**
  * 日期卡片翻页组件 (DailyCardPager)：
- * - 顶部翻页导航栏：包含左翻页按键、日历图标、年月日显示、周几、当天/回今天按钮、右翻页按键。
- * - 卡片主体：HorizontalPager 实现全天记录滑动，配备丝滑缩放与呼吸过渡动画。
- * - 支持外部流式精准定位到特定日期 (scrollToDateFlow)。
+ *
+ * 核心交互机制与管道联动：
+ * 1. 无边界全量时间轴排序：将 [records] 按日期正序严格排列（左侧为历史往昔，右侧为最新/当天），支持无限向左滑动翻阅全部历史数据，无任何天数限制；
+ * 2. 双向时钟联动与响应驱动：
+ *    - 页面滑动派发：当用户手动滑卡片时，监听 [pagerState.currentPage] 并在 LaunchedEffect 中派发 [onDateChanged]，驱动顶部血糖波动折线图同步聚焦；
+ *    - 外部精准定位：订阅 [scrollToDateFlow] 热流，当用户从折线图点击特定数据点时，通过 [animateScrollToPage] 平滑转场至对应卡片；
+ * 3. 智能日期选择弹窗 (DatePickerDialog)：
+ *    - 点击顶部年月日直接唤起系统日历；
+ *    - 包含近邻模糊容错匹配机制 [findNearestDateIndex]，若所选日期无测量记录，自动无缝跳转至最相近的历史记录日，避免空屏挫败感；
+ * 4. 物理呼吸卡片转场动效：
+ *    - 计算横向滑动的 [pageOffset.coerceIn(0f, 1f)]；
+ *    - 对非当前卡片实施 0.93f~1.0f 的缓动等比缩放与 0.45f~1.0f 的呼吸淡入淡出，呈现媲美原生 iOS HealthKit 的卡片层叠视觉质感。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -707,7 +721,11 @@ fun DailyCardPager(
 private enum class TriangleDirection { LEFT, RIGHT }
 
 /**
- * 具有圆润边角的三角形翻页按钮
+ * 具有圆润边角的三角形翻页按钮 (RoundedTriangleButton)
+ *
+ * 绘制原理与触控：
+ * - 矢量贝塞尔曲线绘制：使用 Compose Canvas 与 quadraticBezierTo 构建带圆角倒角的等腰三角形指示箭头，线条过渡圆润自然；
+ * - 禁用态与触摸响应：搭载 [applePressEffect(0.92f)] 缩放物理反馈，并根据 [enabled] 状态平滑降级为低透明度灰度色。
  */
 @Composable
 private fun RoundedTriangleButton(

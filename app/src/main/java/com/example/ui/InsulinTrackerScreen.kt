@@ -197,6 +197,9 @@ fun InsulinTrackerScreen(
     val context = LocalContext.current
     val allRecords by viewModel.allRecords.collectAsStateWithLifecycle()
     val filteredRecords by viewModel.filteredRecords.collectAsStateWithLifecycle()
+    // =========================================================================
+    // 1. 核心状态订阅与驱动源 (MVI / MVVM State Collection)
+    // =========================================================================
     val recentTrendRecords by viewModel.recentTrendRecords.collectAsStateWithLifecycle()
     val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
     val topTrendChartType by viewModel.topTrendChartType.collectAsStateWithLifecycle()
@@ -211,16 +214,20 @@ fun InsulinTrackerScreen(
     val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
     val isDark = LocalIsDarkTheme.current
 
+    // SAF 系统文档选择器：用于用户选择本地 .zip 备份文件进行一键还原
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let { viewModel.importBackupFromUri(context, it) }
     }
 
-    var showLandscapeDialog by rememberSaveable { mutableStateOf(false) }
+    // =========================================================================
+    // 2. 本地 UI 交互瞬态控制 (Transient Interaction State)
+    // =========================================================================
+    var showLandscapeDialog by rememberSaveable { mutableStateOf(false) } // 横屏放大表格全屏视口
     var showVoiceDialog by rememberSaveable { mutableStateOf(false) }
     var isHoldingVoice by remember { mutableStateOf(false) }
-    var showSiriVoiceOverlay by remember { mutableStateOf(false) }
+    var showSiriVoiceOverlay by remember { mutableStateOf(false) }        // 离线语音悬浮流式识别视口
     val requestShowVoice by com.example.data.VoiceRecognitionManager.requestShowOverlay.collectAsStateWithLifecycle()
     LaunchedEffect(requestShowVoice) {
         if (requestShowVoice) {
@@ -230,20 +237,22 @@ fun InsulinTrackerScreen(
     }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
-    var showMenu by remember { mutableStateOf(false) }
-    var isTrendExpanded by rememberSaveable { mutableStateOf(true) }
+    var showMenu by remember { mutableStateOf(false) }                     // 顶栏溢出菜单（备份/还原/主题等）
+    var isTrendExpanded by rememberSaveable { mutableStateOf(true) }      // 顶部走势图折叠/展开动画状态
     val todayStr = remember { BGUtils.getTodayString() }
-    var currentSelectedDate by remember { mutableStateOf(todayStr) }
-    var showCareRecordDialog by remember { mutableStateOf(false) }
+    var currentSelectedDate by remember { mutableStateOf(todayStr) }       // 当前日期选择锚点
+    var showCareRecordDialog by remember { mutableStateOf(false) }         // 关怀模式大字记一笔弹窗
     var careRecordInitialPeriod by remember { mutableStateOf(MealPeriod.MORNING) }
     var careRecordInitialType by remember { mutableStateOf(CareRecordType.FASTING_OR_PRE) }
 
+    // 订阅 ViewModel 单次事件流（如保存成功、删除成功、异常提示等 Toast）
     LaunchedEffect(Unit) {
         viewModel.toastEvent.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
     
+    // 全局模态互斥标记：任何弹窗打开时屏蔽底层快捷按键防误触
     val isAnyDialogOpen = dialogState !is DialogState.None ||
             showSiriVoiceOverlay ||
             showVoiceDialog ||
@@ -252,6 +261,9 @@ fun InsulinTrackerScreen(
             showCareRecordDialog
 
     Box(modifier = modifier.fillMaxSize()) {
+        // =========================================================================
+        // 3. 双模动态切换分支：标准专业版 vs 适老关怀版 (双向仿物理缩放淡入动效)
+        // =========================================================================
         AnimatedContent(
             targetState = isCareMode,
             transitionSpec = {

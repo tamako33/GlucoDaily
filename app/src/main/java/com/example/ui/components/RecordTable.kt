@@ -58,6 +58,22 @@ import com.example.ui.theme.AppThemeColors
 import com.example.ui.theme.TealPrimary
 import java.util.Locale
 
+/**
+ * 临床级全景数据二维矩阵表格组件 (RecordTable)：
+ *
+ * 架构设计与交互体系：
+ * 1. 冻结窗格与双轴滚动联动 (Sticky Frozen Panes)：
+ *    - 左侧日期列固定冻结（水平方向不随数据滚动，垂直方向与数据行严格同步）；
+ *    - 右侧多维临床数据区支持顺滑的水平横向滑动，双轴互相解耦且行高绝对对齐；
+ * 2. 动态列剪枝优化 (Dynamic Column Pruning)：
+ *    - 遍历当前展现区间记录，若特定指标列（如前晚睡前、午餐前、加餐等）全为空，自动精简隐藏该列，极大节约小屏横向宝贵空间；
+ * 3. 单元格微透镜长按放大 (Cell Zoom Lens Interaction)：
+ *    - 任意数据单元格均支持 [combinedClickable(onLongClick = ...)]；
+ *    - 长按即刻呼出 [CellZoomDetail] 浮层，完整呈现药名全称、给药时机、多点位餐后血糖及临床达标解读；
+ * 4. 临床色彩编码与全屏横屏就诊缩放：
+ *    - 遵循《中国 2 型糖尿病防治指南》高/正常/低三态警示色彩规范；
+ *    - 具备 [zoomScale] 线性缩放能力（0.75x ~ 2.5x），支持就诊时一键横屏向主管医生直观展现。
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RecordTable(

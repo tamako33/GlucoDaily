@@ -14,7 +14,7 @@
   <a href="https://developer.android.com/jetpack/compose"><img src="https://img.shields.io/badge/Jetpack_Compose-Material_3-4285F4?style=flat&logo=android" height="20" alt="Jetpack Compose" /></a>
   <a href="https://developer.android.com/about/versions/14"><img src="https://img.shields.io/badge/Android-8.0_~_15-3DDC84?style=flat&logo=android" height="20" alt="Android Support" /></a>
   <a href="https://github.com/alibaba-damo-academy/FunASR"><img src="https://img.shields.io/badge/Offline_AI-SenseVoice--Small-FF6F00?style=flat" height="20" alt="Offline AI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat" height="20" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL_v3-blue?style=flat" height="20" alt="License" /></a>
 </p>
 
 </div>
@@ -342,6 +342,21 @@ app/src/main/assets/sense-voice/
 
 ---
 
-## 📄 开源许可 (License)
+## 📄 开源许可与商业授权 (License & Commercial Licensing)
 
-本项目采用 [Apache License 2.0](LICENSE) 协议开源。欢迎自由学习、研究、二次开发或商业化使用，请保留原作者版权声明及修改说明。
+本项目遵循 **[GNU General Public License v3.0 (GPLv3)](LICENSE)** 强互惠开源协议发布。
+
+### 1. 个人与开源社区使用（100% 免费与自由）
+- 允许**完全免费使用、修改、学习和分发**本项目源码及衍生版本；
+- **强互惠开源保障 (Copyleft)**：若您基于本项目开发并公开发布任何修改版本或衍生作品，根据 GPLv3 规定，**您的衍生作品也必须同样遵循 GPLv3 协议完整开放全部源代码**，绝不允许将修改后的代码据为己有或直接闭源分发。
+
+### 2. 商业改版与专有闭源授权 (Commercial License)
+- 若商业公司、医疗机构或企业希望将本项目代码、算法逻辑或核心交互组件集成至**专有闭源商业产品**中，或不想受限于 GPLv3 的强制开源要求：
+- **必须事先联系项目作者购买双重许可商业授权 (Dual Commercial Licensing)**。未经作者书面授权，严禁任何形式的闭源商业化定制、二次打包转售或去除作者版权声明的分发行为。
+
+---
+
+## 🤝 贡献与致谢 (Credits & Acknowledgements)
+- **SenseVoice-Small & FunASR**：阿里巴巴通义实验室开源的高性能语音识别大模型
+- **Sherpa-ONNX**：k2-fsa 团队提供的新一代端侧嵌入式语音识别与语音合成推理引擎
+- **Google Jetpack Compose & Material 3**：现代化声明式 Android 原生 UI 体系
