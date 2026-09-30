@@ -110,6 +110,26 @@ data class InsulinRecord(
     }
 
     /**
+     * 获取指定餐段的所有用餐记录（包含正餐及后续多次增加的加餐：加餐1、加餐2、加餐3...）
+     */
+    fun getDietList(period: MealPeriod): List<DietEntry> {
+        val raw = when (period) {
+            MealPeriod.MORNING -> bfDiet
+            MealPeriod.LUNCH -> lunchDiet
+            MealPeriod.DINNER -> dinnerDiet
+            MealPeriod.NIGHT -> nightDiet
+        }
+        return DietUtils.parseEntries(raw)
+    }
+
+    /**
+     * 获取指定餐段的饮食临床格式化纯文本摘要
+     */
+    fun getDietSummary(period: MealPeriod): String {
+        return DietUtils.formatSummary(getDietList(period))
+    }
+
+    /**
      * Determines the next recommended period to record.
      * "比如最近一次的记录是上午，则点击添加默认添加为中午的记录"
      */

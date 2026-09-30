@@ -558,16 +558,17 @@ fun RecordTable(
                                         )
                                     }
                                     if (hasBfDiet) {
+                                        val bfSummary = record.getDietSummary(MealPeriod.MORNING)
                                         TableDietCell(
-                                            diet = record.bfDiet,
+                                            diet = bfSummary,
                                             width = bfDietWidth,
                                             fontSize = (dataFontSize.value - 2.5f).sp,
-                                            onLongClick = if (record.bfDiet.isNotBlank()) {
+                                            onLongClick = if (bfSummary.isNotBlank()) {
                                                 {
                                                     zoomDetail = CellZoomDetail(
                                                         title = "🌅 早餐 · 饮食明细",
                                                         date = record.date,
-                                                        mainText = record.bfDiet,
+                                                        mainText = bfSummary,
                                                         subText = "早餐摄入餐食明细",
                                                         highlightColor = TealPrimary
                                                     )
@@ -673,16 +674,17 @@ fun RecordTable(
                                         )
                                     }
                                     if (hasLunchDiet) {
+                                        val lunchSummary = record.getDietSummary(MealPeriod.LUNCH)
                                         TableDietCell(
-                                            diet = record.lunchDiet,
+                                            diet = lunchSummary,
                                             width = lunchDietWidth,
                                             fontSize = (dataFontSize.value - 2.5f).sp,
-                                            onLongClick = if (record.lunchDiet.isNotBlank()) {
+                                            onLongClick = if (lunchSummary.isNotBlank()) {
                                                 {
                                                     zoomDetail = CellZoomDetail(
                                                         title = "☀️ 午餐 · 饮食明细",
                                                         date = record.date,
-                                                        mainText = record.lunchDiet,
+                                                        mainText = lunchSummary,
                                                         subText = "午餐摄入餐食明细",
                                                         highlightColor = cLunchColor
                                                     )
@@ -788,16 +790,17 @@ fun RecordTable(
                                         )
                                     }
                                     if (hasDinnerDiet) {
+                                        val dinnerSummary = record.getDietSummary(MealPeriod.DINNER)
                                         TableDietCell(
-                                            diet = record.dinnerDiet,
+                                            diet = dinnerSummary,
                                             width = dinnerDietWidth,
                                             fontSize = (dataFontSize.value - 2.5f).sp,
-                                            onLongClick = if (record.dinnerDiet.isNotBlank()) {
+                                            onLongClick = if (dinnerSummary.isNotBlank()) {
                                                 {
                                                     zoomDetail = CellZoomDetail(
                                                         title = "🌙 晚餐 · 饮食明细",
                                                         date = record.date,
-                                                        mainText = record.dinnerDiet,
+                                                        mainText = dinnerSummary,
                                                         subText = "晚餐摄入餐食明细",
                                                         highlightColor = cDinnerColor
                                                     )
@@ -869,16 +872,17 @@ fun RecordTable(
                                         )
                                     }
                                     if (hasNightDiet) {
+                                        val nightSummary = record.getDietSummary(MealPeriod.NIGHT)
                                         TableDietCell(
-                                            diet = record.nightDiet,
+                                            diet = nightSummary,
                                             width = nightDietWidth,
                                             fontSize = (dataFontSize.value - 2.5f).sp,
-                                            onLongClick = if (record.nightDiet.isNotBlank()) {
+                                            onLongClick = if (nightSummary.isNotBlank()) {
                                                 {
                                                     zoomDetail = CellZoomDetail(
                                                         title = "🛌 睡前 · 加餐",
                                                         date = record.date,
-                                                        mainText = record.nightDiet,
+                                                        mainText = nightSummary,
                                                         subText = "睡前加餐摄入明细",
                                                         highlightColor = cBedtimeColor
                                                     )

@@ -448,13 +448,14 @@ private fun TimelinePeriodSection(
                 )
             }
 
-            // 3) 用餐情况（左侧统一显示“🍽️ 用餐”，内容居右对齐）
-            if (dietText.isNotBlank()) {
+            // 3) 用餐情况（支持正餐与多条加餐，每条为独立条目，上方带时间，长按直接调起记一笔修改/删除）
+            val dietList = record.getDietList(period)
+            dietList.forEachIndexed { idx, entry ->
                 TimelineItemDietRow(
-                    dietText = dietText,
-                    timeText = record.getItemTime(period, "diet"),
+                    entry = entry,
+                    fallbackTime = record.getItemTime(period, "diet"),
                     onLongClick = {
-                        onAddItem(ItemType.DIET, null)
+                        onAddItem(ItemType.DIET, idx)
                     }
                 )
             }
@@ -735,11 +736,13 @@ private fun TimelineItemMedicationRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineItemDietRow(
-    dietText: String,
-    timeText: String,
+    entry: com.example.data.DietEntry,
+    fallbackTime: String = "",
     onLongClick: () -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+    val displayTag = entry.tag.ifBlank { "用餐" }
+    val effectiveTime = entry.time.ifBlank { fallbackTime }
 
     Column(
         modifier = Modifier
@@ -752,9 +755,9 @@ private fun TimelineItemDietRow(
             )
             .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
-        if (timeText.isNotBlank()) {
+        if (effectiveTime.isNotBlank()) {
             Text(
-                text = timeText,
+                text = effectiveTime,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = (-0.12).sp,
@@ -765,7 +768,7 @@ private fun TimelineItemDietRow(
         }
 
         if (!isExpanded) {
-            // 默认单行紧凑展示：左侧“用餐”标题，右侧食物内容靠右对齐，超长带省略号不跨行
+            // 默认单行紧凑展示：左侧“正餐”/“加餐1”标题，右侧食物内容靠右对齐，超长带省略号不跨行
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -779,7 +782,7 @@ private fun TimelineItemDietRow(
                 ) {
                     Text(text = "🍽️", fontSize = 16.sp)
                     Text(
-                        text = "用餐",
+                        text = displayTag,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = (-0.28).sp,
@@ -789,7 +792,7 @@ private fun TimelineItemDietRow(
                 }
 
                 Text(
-                    text = dietText,
+                    text = entry.content,
                     fontSize = 14.5.sp,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = (-0.224).sp,
@@ -816,7 +819,7 @@ private fun TimelineItemDietRow(
                 ) {
                     Text(text = "🍽️", fontSize = 16.sp)
                     Text(
-                        text = "用餐",
+                        text = displayTag,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = (-0.28).sp,
@@ -826,7 +829,7 @@ private fun TimelineItemDietRow(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = dietText,
+                    text = entry.content,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
                     letterSpacing = (-0.224).sp,

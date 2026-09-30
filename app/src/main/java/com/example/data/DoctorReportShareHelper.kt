@@ -109,7 +109,7 @@ object DoctorReportShareHelper {
             r.fastingBG?.let { mornItems.add("空腹: ${String.format(Locale.CHINA, "%.1f", it)}") }
             r.bfInsulin?.let { mornItems.add("用药/胰岛素: ${r.bfMedName} ${it.toInt()}U") }
             r.postBfBG?.let { mornItems.add("早后2h: ${String.format(Locale.CHINA, "%.1f", it)}") }
-            if (r.bfDiet.isNotBlank()) mornItems.add("饮食: ${r.bfDiet}")
+            if (r.bfDiet.isNotBlank()) mornItems.add("饮食: ${r.getDietSummary(MealPeriod.MORNING)}")
             if (mornItems.isNotEmpty()) sb.append("• 早餐: ").append(mornItems.joinToString(" | ")).append("\n")
 
             // 午间
@@ -117,7 +117,7 @@ object DoctorReportShareHelper {
             r.preLunchBG?.let { lunchItems.add("餐前: ${String.format(Locale.CHINA, "%.1f", it)}") }
             r.lunchInsulin?.let { lunchItems.add("用药/胰岛素: ${r.lunchMedName} ${it.toInt()}U") }
             r.postLunchBG?.let { lunchItems.add("午后2h: ${String.format(Locale.CHINA, "%.1f", it)}") }
-            if (r.lunchDiet.isNotBlank()) lunchItems.add("饮食: ${r.lunchDiet}")
+            if (r.lunchDiet.isNotBlank()) lunchItems.add("饮食: ${r.getDietSummary(MealPeriod.LUNCH)}")
             if (lunchItems.isNotEmpty()) sb.append("• 午餐: ").append(lunchItems.joinToString(" | ")).append("\n")
 
             // 晚间
@@ -125,7 +125,7 @@ object DoctorReportShareHelper {
             r.preDinnerBG?.let { dinnerItems.add("餐前: ${String.format(Locale.CHINA, "%.1f", it)}") }
             r.dinnerInsulin?.let { dinnerItems.add("用药/胰岛素: ${r.dinnerMedName} ${it.toInt()}U") }
             r.postDinnerBG?.let { dinnerItems.add("晚后2h: ${String.format(Locale.CHINA, "%.1f", it)}") }
-            if (r.dinnerDiet.isNotBlank()) dinnerItems.add("饮食: ${r.dinnerDiet}")
+            if (r.dinnerDiet.isNotBlank()) dinnerItems.add("饮食: ${r.getDietSummary(MealPeriod.DINNER)}")
             if (dinnerItems.isNotEmpty()) sb.append("• 晚餐: ").append(dinnerItems.joinToString(" | ")).append("\n")
 
             // 睡前
@@ -133,7 +133,7 @@ object DoctorReportShareHelper {
             r.preNightBG?.let { nightItems.add("睡前: ${String.format(Locale.CHINA, "%.1f", it)}") }
             r.bedtimeInsulin?.let { nightItems.add("睡前用药: ${r.nightMedName} ${it.toInt()}U") }
             r.postNightBG?.let { nightItems.add("夜间: ${String.format(Locale.CHINA, "%.1f", it)}") }
-            if (r.nightDiet.isNotBlank()) nightItems.add("加餐: ${r.nightDiet}")
+            if (r.nightDiet.isNotBlank()) nightItems.add("加餐: ${r.getDietSummary(MealPeriod.NIGHT)}")
             if (nightItems.isNotEmpty()) sb.append("• 睡前: ").append(nightItems.joinToString(" | ")).append("\n")
 
             if (r.notes.isNotBlank()) {
@@ -180,25 +180,25 @@ object DoctorReportShareHelper {
                 escapeCsv(r.bfMedName),
                 r.bfInsulin?.toString() ?: "",
                 escapeCsv(bfPostStr),
-                escapeCsv(r.bfDiet),
+                escapeCsv(r.getDietSummary(MealPeriod.MORNING)),
                 escapeCsv(r.bfExercise),
                 r.preLunchBG?.toString() ?: "",
                 escapeCsv(r.lunchMedName),
                 r.lunchInsulin?.toString() ?: "",
                 escapeCsv(lunchPostStr),
-                escapeCsv(r.lunchDiet),
+                escapeCsv(r.getDietSummary(MealPeriod.LUNCH)),
                 escapeCsv(r.lunchExercise),
                 r.preDinnerBG?.toString() ?: "",
                 escapeCsv(r.dinnerMedName),
                 r.dinnerInsulin?.toString() ?: "",
                 escapeCsv(dinnerPostStr),
-                escapeCsv(r.dinnerDiet),
+                escapeCsv(r.getDietSummary(MealPeriod.DINNER)),
                 escapeCsv(r.dinnerExercise),
                 r.preNightBG?.toString() ?: "",
                 escapeCsv(r.nightMedName),
                 r.bedtimeInsulin?.toString() ?: "",
                 escapeCsv(nightPostStr),
-                escapeCsv(r.nightDiet),
+                escapeCsv(r.getDietSummary(MealPeriod.NIGHT)),
                 escapeCsv(r.notes)
             )
             csvBuilder.append(cols.joinToString(",")).append("\r\n")

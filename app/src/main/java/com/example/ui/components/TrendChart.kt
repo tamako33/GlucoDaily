@@ -718,8 +718,8 @@ private fun TodayGlucoseCanvasChart(
     ) {
         val width = size.width
         val height = size.height
-        val paddingLeft = 26.dp.toPx()
-        val paddingRight = 12.dp.toPx()
+        val paddingLeft = 28.dp.toPx()
+        val paddingRight = 14.dp.toPx()
         val paddingTop = 12.dp.toPx()
         val paddingBottom = 20.dp.toPx()
 
@@ -764,8 +764,10 @@ private fun TodayGlucoseCanvasChart(
         }
 
         // 3. 完全静态绘制：X 轴时段文字标签（空腹, 早后, 午前, 午后, 晚前, 晚后, 睡前）—— 表格绝对不动
-        val slotWidth = chartWidth / (periods.size - 1).toFloat()
-        fun getSlotX(idx: Int): Float = paddingLeft + idx * slotWidth
+        // 空腹向右收缩避让 Y 轴底层刻度数字，睡前向左收缩避让右屏幕边缘，彻底杜绝文本粘连重叠
+        val slotInnerMargin = 14.dp.toPx()
+        val slotWidth = (chartWidth - 2 * slotInnerMargin) / (periods.size - 1).toFloat()
+        fun getSlotX(idx: Int): Float = paddingLeft + slotInnerMargin + idx * slotWidth
 
         for (i in periods.indices) {
             val cx = getSlotX(i)
@@ -944,13 +946,13 @@ private fun TodayGlucoseCanvasChart(
             // 数值标签跟随数据点平滑位移（边界点智能避让，避免与 Y 轴刻度紧挨碰擦）
             if (mp.alpha > 0.2f) {
                 val align = when {
-                    mp.x <= paddingLeft + 6.dp.toPx() -> android.graphics.Paint.Align.LEFT
-                    mp.x >= width - paddingRight - 6.dp.toPx() -> android.graphics.Paint.Align.RIGHT
+                    mp.x <= paddingLeft + slotInnerMargin - 2.dp.toPx() -> android.graphics.Paint.Align.LEFT
+                    mp.x >= width - paddingRight - slotInnerMargin + 2.dp.toPx() -> android.graphics.Paint.Align.RIGHT
                     else -> android.graphics.Paint.Align.CENTER
                 }
                 val labelX = when {
-                    mp.x <= paddingLeft + 6.dp.toPx() -> mp.x + 2.dp.toPx()
-                    mp.x >= width - paddingRight - 6.dp.toPx() -> mp.x - 2.dp.toPx()
+                    mp.x <= paddingLeft + slotInnerMargin - 2.dp.toPx() -> mp.x + 2.dp.toPx()
+                    mp.x >= width - paddingRight - slotInnerMargin + 2.dp.toPx() -> mp.x - 2.dp.toPx()
                     else -> mp.x
                 }
                 drawContext.canvas.nativeCanvas.drawText(

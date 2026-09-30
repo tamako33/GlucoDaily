@@ -90,7 +90,8 @@ sealed class DialogState {
         val initialDate: String? = null,
         val initialPeriod: MealPeriod? = null,
         val initialItemType: ItemType? = null,
-        val initialPostMealIndex: Int? = null
+        val initialPostMealIndex: Int? = null,
+        val initialDietIndex: Int? = null
     ) : DialogState()
     data class ConfirmDelete(val record: InsulinRecord) : DialogState()
 }
@@ -278,7 +279,8 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
         date: String? = null,
         period: MealPeriod? = null,
         itemType: ItemType? = null,
-        postMealIndex: Int? = null
+        postMealIndex: Int? = null,
+        dietIndex: Int? = null
     ) {
         val targetDate = date ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
         val targetPeriod = period ?: InsulinRecord.getPeriodForTime()
@@ -286,7 +288,8 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
             initialDate = targetDate,
             initialPeriod = targetPeriod,
             initialItemType = itemType,
-            initialPostMealIndex = postMealIndex
+            initialPostMealIndex = if (itemType == ItemType.POST_MEAL_BG) (postMealIndex ?: dietIndex) else postMealIndex,
+            initialDietIndex = if (itemType == ItemType.DIET) (dietIndex ?: postMealIndex) else dietIndex
         )
     }
 
@@ -782,13 +785,31 @@ class InsulinTrackerViewModel(application: Application) : AndroidViewModel(appli
                     base.withItemTime(period, "med", "")
                 }
                 ItemType.DIET -> {
-                    val base = when (period) {
-                        MealPeriod.MORNING -> record.copy(bfDiet = "")
-                        MealPeriod.LUNCH -> record.copy(lunchDiet = "")
-                        MealPeriod.DINNER -> record.copy(dinnerDiet = "")
-                        MealPeriod.NIGHT -> record.copy(nightDiet = "")
+                    val list = record.getDietList(period).toMutableList()
+                    val idx = postMealIndex
+                    if (idx != null && idx in list.indices) {
+                        list.removeAt(idx)
+                        val serialized = com.example.data.DietUtils.serializeEntries(list)
+                        val base = when (period) {
+                            MealPeriod.MORNING -> record.copy(bfDiet = serialized)
+                            MealPeriod.LUNCH -> record.copy(lunchDiet = serialized)
+                            MealPeriod.DINNER -> record.copy(dinnerDiet = serialized)
+                            MealPeriod.NIGHT -> record.copy(nightDiet = serialized)
+                        }
+                        if (list.isEmpty()) {
+                            base.withItemTime(period, "diet", "")
+                        } else {
+                            base
+                        }
+                    } else {
+                        val base = when (period) {
+                            MealPeriod.MORNING -> record.copy(bfDiet = "")
+                            MealPeriod.LUNCH -> record.copy(lunchDiet = "")
+                            MealPeriod.DINNER -> record.copy(dinnerDiet = "")
+                            MealPeriod.NIGHT -> record.copy(nightDiet = "")
+                        }
+                        base.withItemTime(period, "diet", "")
                     }
-                    base.withItemTime(period, "diet", "")
                 }
                 ItemType.EXERCISE -> {
                     val base = when (period) {

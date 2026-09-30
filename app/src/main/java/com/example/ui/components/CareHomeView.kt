@@ -986,12 +986,7 @@ private fun CareMealCard(
     }
     val medTime = record.getItemTime(period, "med")
 
-    val dietValue = when (period) {
-        MealPeriod.MORNING -> record.bfDiet
-        MealPeriod.LUNCH -> record.lunchDiet
-        MealPeriod.DINNER -> record.dinnerDiet
-        MealPeriod.NIGHT -> record.nightDiet
-    }
+    val dietValue = record.getDietSummary(period)
     val dietTime = record.getItemTime(period, "diet")
 
     val exerciseValue = when (period) {

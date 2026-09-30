@@ -155,6 +155,7 @@ fun AddItemDialog(
     initialPeriod: MealPeriod? = null,
     initialItemType: ItemType? = null,
     initialPostMealIndex: Int? = null,
+    initialDietIndex: Int? = null,
     allRecords: List<InsulinRecord>,
     onDismiss: () -> Unit,
     onSaveItem: (
@@ -197,12 +198,20 @@ fun AddItemDialog(
         mutableStateOf(initialPostMealIndex)
     }
 
+    var currentDietIndex by remember(initialDietIndex) {
+        mutableStateOf(initialDietIndex)
+    }
+
     // 表单状态：解耦餐前与餐后血糖，记忆每个选项卡数据
     var preBgInputText by remember { mutableStateOf("") }
     var postBgInputText by remember { mutableStateOf("") }
     val postMealInputs = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     val postMealTimes = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     var dietInputText by remember { mutableStateOf("") }
+    var dietTagChoice by remember { mutableStateOf("正餐") }
+    val dietInputs = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    val dietTimes = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    val extraDynamicDietTabs = remember { mutableStateListOf<String>() }
     var exerciseNameInputText by remember { mutableStateOf("") }
     var exerciseDurationInputText by remember { mutableStateOf("") }
     var medNameInputText by remember { mutableStateOf(if (selectedPeriod == MealPeriod.NIGHT) "甘精胰岛素" else "门冬胰岛素") }
@@ -218,6 +227,7 @@ fun AddItemDialog(
     // 初始状态快照，用于精确检测哪些项目被修改/新增/删除
     var initialPreBg by remember { mutableStateOf<Float?>(null) }
     var initialDiet by remember { mutableStateOf("") }
+    val initialDietMap = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     var initialExercise by remember { mutableStateOf("") }
     var initialMedDose by remember { mutableStateOf<Float?>(null) }
     var initialMedName by remember { mutableStateOf("") }
@@ -360,7 +370,7 @@ fun AddItemDialog(
     val scrollState = rememberScrollState()
 
     // 动态回显与载入指定餐段的全部已有数据
-    fun loadExistingDataForPeriod(date: String, period: MealPeriod, postMealIdx: Int? = null) {
+    fun loadExistingDataForPeriod(date: String, period: MealPeriod, postMealIdx: Int? = null, dietIdx: Int? = null) {
         val currentRecord = allRecords.find { it.date == date }
 
         // 1. 餐前血糖
@@ -403,15 +413,39 @@ fun AddItemDialog(
             postMealTimeInputText = postMealTimes[postMealTagChoice] ?: nowTimeStr
         }
 
-        // 3. 用餐
+        // 3. 用餐（多条目及加餐支持）
         val d = when (period) {
             MealPeriod.MORNING -> currentRecord?.bfDiet
             MealPeriod.LUNCH -> currentRecord?.lunchDiet
             MealPeriod.DINNER -> currentRecord?.dinnerDiet
             MealPeriod.NIGHT -> currentRecord?.nightDiet
         } ?: ""
-        dietInputText = d
         initialDiet = d
+        val currentDietList = currentRecord?.getDietList(period) ?: emptyList()
+        dietInputs.clear()
+        dietTimes.clear()
+        initialDietMap.clear()
+        currentDietList.forEach { entry ->
+            val tag = entry.tag.ifBlank { "正餐" }
+            dietInputs[tag] = entry.content
+            dietTimes[tag] = entry.time.ifBlank { nowTimeStr }
+            initialDietMap[tag] = entry.content
+        }
+        val targetDietEntry = if (dietIdx != null && dietIdx in currentDietList.indices) {
+            currentDietList[dietIdx]
+        } else {
+            currentDietList.find { it.tag == dietTagChoice } ?: currentDietList.firstOrNull()
+        }
+        if (targetDietEntry != null) {
+            val actualIdx = currentDietList.indexOf(targetDietEntry)
+            currentDietIndex = if (actualIdx >= 0) actualIdx else dietIdx
+            dietTagChoice = targetDietEntry.tag.ifBlank { "正餐" }
+            dietInputText = targetDietEntry.content
+        } else {
+            currentDietIndex = null
+            dietTagChoice = "正餐"
+            dietInputText = dietInputs["正餐"] ?: ""
+        }
 
         // 4. 运动
         val ex = when (period) {
@@ -469,6 +503,16 @@ fun AddItemDialog(
         draft.postMealTimes.clear()
         draft.postMealTimes.putAll(postMealTimes)
         draft.dietInputText = dietInputText
+        draft.dietTagChoice = dietTagChoice
+        draft.dietInputs.clear()
+        draft.dietInputs.putAll(dietInputs)
+        draft.dietTimes.clear()
+        draft.dietTimes.putAll(dietTimes)
+        draft.currentDietIndex = currentDietIndex
+        draft.extraDynamicDietTabs.clear()
+        draft.extraDynamicDietTabs.addAll(extraDynamicDietTabs)
+        draft.initialDietMap.clear()
+        draft.initialDietMap.putAll(initialDietMap)
         draft.exerciseNameInputText = exerciseNameInputText
         draft.exerciseDurationInputText = exerciseDurationInputText
         draft.medNameInputText = medNameInputText
@@ -501,6 +545,16 @@ fun AddItemDialog(
         postMealTimes.clear()
         postMealTimes.putAll(draft.postMealTimes)
         dietInputText = draft.dietInputText
+        dietTagChoice = draft.dietTagChoice
+        dietInputs.clear()
+        dietInputs.putAll(draft.dietInputs)
+        dietTimes.clear()
+        dietTimes.putAll(draft.dietTimes)
+        currentDietIndex = draft.currentDietIndex
+        extraDynamicDietTabs.clear()
+        extraDynamicDietTabs.addAll(draft.extraDynamicDietTabs)
+        initialDietMap.clear()
+        initialDietMap.putAll(draft.initialDietMap)
         exerciseNameInputText = draft.exerciseNameInputText
         exerciseDurationInputText = draft.exerciseDurationInputText
         medNameInputText = draft.medNameInputText
@@ -524,18 +578,18 @@ fun AddItemDialog(
         initialPostMealMap.putAll(draft.initialPostMealMap)
     }
 
-    fun loadPeriod(period: MealPeriod, postMealIdx: Int? = null) {
+    fun loadPeriod(period: MealPeriod, postMealIdx: Int? = null, dietIdx: Int? = null) {
         val draft = periodDrafts[period]
         if (draft != null && draft.isLoaded) {
             restoreFromDraft(draft)
         } else {
-            loadExistingDataForPeriod(selectedDate, period, postMealIdx)
+            loadExistingDataForPeriod(selectedDate, period, postMealIdx, dietIdx)
             flushCurrentToDraft(period)
         }
     }
 
     LaunchedEffect(Unit) {
-        loadPeriod(selectedPeriod, initialPostMealIndex)
+        loadPeriod(selectedPeriod, initialPostMealIndex, initialDietIndex)
     }
 
     // 切换时段：先保存当前时段的全部临时输入与状态，再无缝恢复或载入新时段数据（绝对保留已填数值）
@@ -543,13 +597,15 @@ fun AddItemDialog(
         if (period == selectedPeriod) return
         flushCurrentToDraft(selectedPeriod)
         selectedPeriod = period
-        loadPeriod(period, null)
+        loadPeriod(period, null, null)
     }
 
     fun onItemTypeChanged(type: ItemType) {
         selectedItemType = type
         if (type == ItemType.POST_MEAL_BG) {
             postBgInputText = postMealInputs[postMealTagChoice] ?: ""
+        } else if (type == ItemType.DIET) {
+            dietInputText = dietInputs[dietTagChoice] ?: ""
         }
     }
 
@@ -591,6 +647,31 @@ fun AddItemDialog(
 
     val currentRecord = remember(allRecords, selectedDate) { allRecords.find { it.date == selectedDate } }
     val postMealList = remember(currentRecord, selectedPeriod) { currentRecord?.getPostMealList(selectedPeriod) ?: emptyList() }
+    val dietList = remember(currentRecord, selectedPeriod) { currentRecord?.getDietList(selectedPeriod) ?: emptyList() }
+
+    val allDietTabs = remember(dietList, extraDynamicDietTabs.toList()) {
+        val base = mutableListOf("正餐")
+        dietList.forEach { entry ->
+            val norm = entry.tag.ifBlank { "正餐" }
+            if (norm != "正餐" && !base.contains(norm)) {
+                base.add(norm)
+            }
+        }
+        extraDynamicDietTabs.forEach { dyn ->
+            if (dyn != "正餐" && !base.contains(dyn)) {
+                base.add(dyn)
+            }
+        }
+        base.sortedWith { a, b ->
+            if (a == "正餐") -1
+            else if (b == "正餐") 1
+            else {
+                val numA = Regex("""\d+""").find(a)?.value?.toIntOrNull() ?: 999
+                val numB = Regex("""\d+""").find(b)?.value?.toIntOrNull() ?: 999
+                numA.compareTo(numB)
+            }
+        }
+    }
 
     val allPostMealTabs = remember(postMealList, extraDynamicPostMealTabs.toList()) {
         val base = mutableListOf("餐后半小时", "餐后1h", "餐后2h")
@@ -629,8 +710,22 @@ fun AddItemDialog(
         currentPreBgFloat != null && currentPreBgFloat in 0.5f..35.0f
     }
 
-    val currentDietTrimmed = dietInputText.trim()
-    val isDietModified = currentDietTrimmed != initialDiet.trim()
+    val isDietModified = run {
+        val curEntries = mutableListOf<com.example.data.DietEntry>()
+        val sortedDietTags = dietInputs.keys.sortedWith { a, b ->
+            if (a == "正餐") -1 else if (b == "正餐") 1 else (Regex("""\d+""").find(a)?.value?.toIntOrNull() ?: 999).compareTo(Regex("""\d+""").find(b)?.value?.toIntOrNull() ?: 999)
+        }
+        val currentKeys = (sortedDietTags + if (selectedItemType == ItemType.DIET) listOf(dietTagChoice) else emptyList()).distinct()
+        currentKeys.forEach { tag ->
+            val text = if (selectedItemType == ItemType.DIET && tag == dietTagChoice) dietInputText.trim() else (dietInputs[tag]?.trim().orEmpty())
+            if (text.isNotEmpty()) {
+                val t = dietTimes[tag]?.ifBlank { currentItemTime } ?: currentItemTime
+                curEntries.add(com.example.data.DietEntry(content = text, time = t, tag = tag))
+            }
+        }
+        val currentSerialized = com.example.data.DietUtils.serializeEntries(curEntries)
+        currentSerialized.trim() != initialDiet.trim()
+    }
 
     val currentMedDoseFloat = medDoseInputText.trim().toFloatOrNull()
     val isMedModified = if (initialMedDose != null) {
@@ -706,7 +801,7 @@ fun AddItemDialog(
     fun doesTabHaveData(itemType: ItemType): Boolean {
         return when (itemType) {
             ItemType.PRE_MEAL_BG -> preBgInputText.trim().isNotEmpty()
-            ItemType.DIET -> dietInputText.trim().isNotEmpty()
+            ItemType.DIET -> dietInputText.trim().isNotEmpty() || dietInputs.values.any { it.trim().isNotEmpty() }
             ItemType.MEDICATION -> medDoseInputText.trim().isNotEmpty()
             ItemType.POST_MEAL_BG -> postBgInputText.trim().isNotEmpty() || postMealInputs.values.any { it.trim().isNotEmpty() }
             ItemType.EXERCISE -> exerciseNameInputText.trim().isNotEmpty() || exerciseDurationInputText.trim().isNotEmpty()
@@ -733,6 +828,11 @@ fun AddItemDialog(
                 draft.postMealTimes[draft.postMealTagChoice] = recordTime
             }
 
+            if (p == selectedPeriod && selectedItemType == ItemType.DIET) {
+                draft.dietInputs[draft.dietTagChoice] = dietInputText
+                draft.dietTimes[draft.dietTagChoice] = recordTime
+            }
+
             val postMealEntriesList = mutableListOf<com.example.data.PostMealEntry>()
             draft.postMealInputs.forEach { (tag, valStr) ->
                 val v = valStr.trim().toFloatOrNull()
@@ -742,13 +842,26 @@ fun AddItemDialog(
                 }
             }
 
+            val dietEntriesList = mutableListOf<com.example.data.DietEntry>()
+            val sortedDietTags = draft.dietInputs.keys.sortedWith { a, b ->
+                if (a == "正餐") -1 else if (b == "正餐") 1 else (Regex("""\d+""").find(a)?.value?.toIntOrNull() ?: 999).compareTo(Regex("""\d+""").find(b)?.value?.toIntOrNull() ?: 999)
+            }
+            sortedDietTags.forEach { tag ->
+                val text = draft.dietInputs[tag]?.trim().orEmpty()
+                if (text.isNotEmpty()) {
+                    val t = draft.dietTimes[tag]?.ifBlank { recordTime } ?: recordTime
+                    dietEntriesList.add(com.example.data.DietEntry(content = text, time = t, tag = tag))
+                }
+            }
+            val serializedDiet = com.example.data.DietUtils.serializeEntries(dietEntriesList)
+
             val curPreBgFloat = draft.preBgInputText.trim().toFloatOrNull()
             val preBgMod = if (draft.initialPreBg != null) {
                 curPreBgFloat != draft.initialPreBg
             } else {
                 curPreBgFloat != null && curPreBgFloat in 0.5f..35.0f
             }
-            val dietMod = draft.dietInputText.trim() != draft.initialDiet.trim()
+            val dietMod = serializedDiet.trim() != draft.initialDiet.trim()
             val curMedDoseFloat = draft.medDoseInputText.trim().toFloatOrNull()
             val medMod = if (draft.initialMedDose != null) {
                 curMedDoseFloat != draft.initialMedDose ||
@@ -782,7 +895,7 @@ fun AddItemDialog(
                 p,
                 curPreBgFloat,
                 preBgMod,
-                draft.dietInputText.trim(),
+                serializedDiet,
                 dietMod,
                 draft.medNameInputText.trim(),
                 curMedDoseFloat,
@@ -800,7 +913,7 @@ fun AddItemDialog(
 
         if (keepOpen) {
             periodDrafts.clear()
-            loadPeriod(selectedPeriod, null)
+            loadPeriod(selectedPeriod, null, null)
         }
     }
 
@@ -1243,12 +1356,147 @@ fun AddItemDialog(
                     }
 
                     ItemType.DIET -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // 动态用餐餐次选项卡（正餐、加餐1、加餐2 及 + 新增按钮）
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                allDietTabs.forEach { tab ->
+                                    val isSelected = dietTagChoice == tab
+                                    val match = dietList.find { it.tag == tab }
+                                    val tabVal = if (isSelected) dietInputText.trim() else dietInputs[tab]?.trim().orEmpty()
+                                    val hasData = tabVal.isNotEmpty() || match != null
+
+                                    val targetBg = when {
+                                        isSelected -> TealPrimary
+                                        hasData -> if (AppThemeColors.isDark) Color(0xFF134E4A).copy(alpha = 0.65f) else Color(0xFFE6F4EA)
+                                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    }
+                                    val border = when {
+                                        isSelected -> null
+                                        hasData -> BorderStroke(1.dp, if (AppThemeColors.isDark) Color(0xFF2DD4BF).copy(alpha = 0.55f) else TealPrimary.copy(alpha = 0.5f))
+                                        else -> null
+                                    }
+                                    val targetText = when {
+                                        isSelected -> Color.White
+                                        hasData -> if (AppThemeColors.isDark) Color(0xFF2DD4BF) else TealPrimary
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                    val animBg by animateColorAsState(
+                                        targetValue = targetBg,
+                                        animationSpec = tween(220),
+                                        label = "diet_tab_bg"
+                                    )
+                                    val animText by animateColorAsState(
+                                        targetValue = targetText,
+                                        animationSpec = tween(220),
+                                        label = "diet_tab_text"
+                                    )
+                                    val tabScale by animateFloatAsState(
+                                        targetValue = if (isSelected) 1.05f else 1f,
+                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                        label = "diet_tab_scale"
+                                    )
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = animBg,
+                                        border = border,
+                                        modifier = Modifier
+                                            .graphicsLayer {
+                                                scaleX = tabScale
+                                                scaleY = tabScale
+                                            }
+                                            .clickable {
+                                                val prevChoice = dietTagChoice
+                                                if (prevChoice != tab) {
+                                                    dietInputs[prevChoice] = dietInputText
+                                                }
+                                                dietTagChoice = tab
+                                                if (match != null) {
+                                                    currentDietIndex = dietList.indexOf(match)
+                                                    dietInputText = dietInputs[tab] ?: match.content
+                                                } else {
+                                                    currentDietIndex = null
+                                                    dietInputText = dietInputs[tab] ?: ""
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            if (hasData && !isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(if (AppThemeColors.isDark) Color(0xFF2DD4BF) else TealPrimary)
+                                                )
+                                            }
+                                            Text(
+                                                text = tab,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isSelected || hasData) FontWeight.Bold else FontWeight.Medium,
+                                                color = animText
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // "+ 新增" 按钮（生成 加餐1, 加餐2, ... 依此类推）
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
+                                    modifier = Modifier.clickable {
+                                        val prevChoice = dietTagChoice
+                                        dietInputs[prevChoice] = dietInputText
+
+                                        val nextTab = com.example.data.DietUtils.getNextSnackTag(allDietTabs)
+                                        if (!extraDynamicDietTabs.contains(nextTab)) {
+                                            extraDynamicDietTabs.add(nextTab)
+                                        }
+                                        dietTagChoice = nextTab
+                                        currentDietIndex = null
+                                        dietInputText = ""
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "新增",
+                                            tint = TealPrimary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = "新增",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TealPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 饮食内容输入框
                             OutlinedTextField(
                                 value = dietInputText,
-                                onValueChange = { dietInputText = it },
-                                label = { Text("吃了什么？") },
-                                placeholder = { Text("如：全麦面包、水煮蛋1个、纯牛奶") },
+                                onValueChange = {
+                                    dietInputText = it
+                                    dietInputs[dietTagChoice] = it
+                                },
+                                label = { Text(if (dietTagChoice == "正餐") "正餐吃了什么？" else "${dietTagChoice}吃了什么？") },
+                                placeholder = { Text(if (dietTagChoice == "正餐") "如：全麦面包、水煮蛋1个、纯牛奶" else "如：苹果半个、坚果一小把") },
                                 minLines = 2,
                                 maxLines = 4,
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -1702,6 +1950,12 @@ private class PeriodDraftState(
     val postMealInputs: MutableMap<String, String> = mutableMapOf(),
     val postMealTimes: MutableMap<String, String> = mutableMapOf(),
     var dietInputText: String = "",
+    var dietTagChoice: String = "正餐",
+    val dietInputs: MutableMap<String, String> = mutableMapOf(),
+    val dietTimes: MutableMap<String, String> = mutableMapOf(),
+    var currentDietIndex: Int? = null,
+    val extraDynamicDietTabs: MutableList<String> = mutableListOf(),
+    val initialDietMap: MutableMap<String, String> = mutableMapOf(),
     var exerciseNameInputText: String = "",
     var exerciseDurationInputText: String = "",
     var medNameInputText: String = "",
@@ -1730,7 +1984,19 @@ private class PeriodDraftState(
         } else {
             currentPreBgFloat != null && currentPreBgFloat in 0.5f..35.0f
         }
-        val dietMod = dietInputText.trim() != initialDiet.trim()
+        val curEntries = mutableListOf<com.example.data.DietEntry>()
+        val sortedDietTags = dietInputs.keys.sortedWith { a, b ->
+            if (a == "正餐") -1 else if (b == "正餐") 1 else (Regex("""\d+""").find(a)?.value?.toIntOrNull() ?: 999).compareTo(Regex("""\d+""").find(b)?.value?.toIntOrNull() ?: 999)
+        }
+        sortedDietTags.forEach { tag ->
+            val text = dietInputs[tag]?.trim().orEmpty()
+            if (text.isNotEmpty()) {
+                val t = dietTimes[tag]?.ifBlank { currentItemTime } ?: currentItemTime
+                curEntries.add(com.example.data.DietEntry(content = text, time = t, tag = tag))
+            }
+        }
+        val currentSerialized = com.example.data.DietUtils.serializeEntries(curEntries)
+        val dietMod = currentSerialized.trim() != initialDiet.trim()
         val currentMedDoseFloat = medDoseInputText.trim().toFloatOrNull()
         val medMod = if (initialMedDose != null) {
             currentMedDoseFloat != initialMedDose ||

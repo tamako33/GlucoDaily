@@ -945,6 +945,7 @@ fun InsulinTrackerScreen(
                 initialPeriod = state.initialPeriod,
                 initialItemType = state.initialItemType,
                 initialPostMealIndex = state.initialPostMealIndex,
+                initialDietIndex = state.initialDietIndex,
                 allRecords = allRecords,
                 onDismiss = { viewModel.dismissDialog() },
                 onSaveItem = { date, period, preBgVal, isPreBgMod, dietText, isDietMod, medName, dose, medTiming, isMedMod, exerciseText, isExMod, postMealEntries, isPostMealMod, recordTime, isTimeManuallyEdited, keepOpen ->
