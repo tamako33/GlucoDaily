@@ -147,7 +147,7 @@ object DietUtils {
     }
 
     fun getNextSnackTag(existingTags: Collection<String>): String {
-        var maxSnackNum = 2 // 默认保证加餐1、加餐2存在后，从加餐3开始递增
+        var maxSnackNum = 0
         existingTags.forEach { t ->
             val norm = normalizeTag(t)
             val m = Regex("""^加餐(\d+)$""").find(norm)

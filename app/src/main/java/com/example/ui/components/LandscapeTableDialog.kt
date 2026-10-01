@@ -357,12 +357,12 @@ fun LandscapeTableView(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Share,
-                                            contentDescription = "发给医生",
+                                            contentDescription = "导出表格",
                                             tint = TealPrimary,
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Text(
-                                            text = "发给医生",
+                                            text = "导出表格",
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = TealPrimary
