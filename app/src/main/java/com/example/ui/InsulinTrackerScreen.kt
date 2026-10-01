@@ -425,9 +425,7 @@ fun InsulinTrackerScreen(
                             Image(
                                 painter = painterResource(id = R.drawable.ic_app_logo),
                                 contentDescription = "App Icon",
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(AppleSmShape)
+                                modifier = Modifier.size(28.dp)
                             )
 
                             Text(
